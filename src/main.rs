@@ -22,9 +22,9 @@ struct Args {
 
 fn usage(code: i32) -> ! {
     let text = format!(
-        "usage: wiki-search [options] <query>
+        "Search Wikipedia from the terminal
 
-Search Wikipedia from the terminal
+usage: wiki-search [options] <query>
 
 options:
   -w, --wpm <n>      words per minute (default: {DEFAULT_WPM})
