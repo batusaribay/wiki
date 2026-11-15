@@ -1,0 +1,4 @@
+# The project is Rust-only for GitHub language statistics.
+preview.txt linguist-documentation
+Cargo.lock linguist-generated
+preview.png binary

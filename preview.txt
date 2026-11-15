@@ -1,0 +1,19 @@
+$ wiki-search serendipity
+Serendipity
+
+Serendipity is an unplanned fortunate discovery. The term was coined by Horace
+Walpole in 1754, after he read a Persian fairy tale called The Three Princes of
+Serendip, whose heroes constantly made lucky discoveries. The concept is often
+associated with scientific and technological breakthroughs, where accidental
+discoveries led to new insights or inventions. Many significant discoveries in
+history were serendipitous, including penicillin, Post-it notes, Popsicles, and
+the microwave oven, arising from unforeseen circumstances that were then
+recognized and capitalized upon.
+
+$ wiki-search --wpm 400 --lang tr kedi
+Kedi
+
+Kedi (Felis catus), ayrıca evcil kedi veya ev kedisi olarak da adlandırılır,
+küçük, evcilleştirilmiş etobur memelidir. İnsanlar kedilerin arkadaşlığına ve
+böcek, fare gibi ev zararlılarını avlayabilme yeteneğine önem vermektedir.
+Kediler anatomik olarak güçlü, esnek bedenleriyle, hızlı refleksleriyle, keskin,
