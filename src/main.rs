@@ -24,7 +24,7 @@ fn usage(code: i32) -> ! {
     let text = format!(
         "usage: wiki-search [options] <query>
 
-searches wikipedia and prints the top result at an average reading speed.
+Search Wikipedia from the terminal.
 
 options:
   -w, --wpm <n>      words per minute (default: {DEFAULT_WPM})
