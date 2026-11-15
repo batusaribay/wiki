@@ -18,8 +18,7 @@ it a single step.
 
 It is also deliberately slow. Dumping a wall of text at terminal speed is
 scanning, not reading. Pacing the output turns a lookup into a reading session.
-The output is plain text with no TUI, pager, or config file. Only the title and
-section headings are coloured, and they use the terminal's own palette.
+The output is plain text with no colour, TUI, pager, or config file.
 
 ## How it works
 
@@ -36,9 +35,7 @@ section headings are coloured, and they use the terminal's own palette.
 6. Lines wrap to `COLUMNS` (80 when unset), and each source line ends with a
    newline, so paragraphs stay separate. Anything wider than the terminal is
    the terminal's problem, not the formatter's.
-7. The title and section headings are painted with ANSI colours from the
-   terminal's palette. The article body stays plain.
-8. TLS is handled by `rustls`. The request has a 10-second connect timeout, a
+7. TLS is handled by `rustls`. The request has a 10-second connect timeout, a
    30-second overall timeout, and a 16 MiB response cap.
 
 ## Usage
@@ -51,7 +48,6 @@ section headings are coloured, and they use the terminal's own palette.
 | `wiki-search --full <query>` | Read the whole article. |
 | `wiki-search --wpm 300 <query>` | Read faster or slower. |
 | `wiki-search --lang tr <query>` | Use another Wikipedia edition. |
-| `wiki-search --color never <query>` | Force plain text output. |
 | `wiki-search --help` | Show the help text. |
 | `wiki-search --version` | Show the version. |
 
@@ -62,24 +58,11 @@ wiki-search rust programming language
 wiki-search --wpm 300 alan turing
 wiki-search --full history of the bicycle
 wiki-search --lang tr kedi
-wiki-search --color never serendipity
 COLUMNS=100 wiki-search serendipity
-NO_COLOR=1 wiki-search serendipity
 ```
 
 A query with no matching article exits with status `1` and prints the reason on
 stderr.
-
-## Theme
-
-Colour comes from the terminal's ANSI palette, never from hard-coded RGB
-values. The terminal maps palette slots to the active theme, so light, dark, and
-custom themes are followed automatically. Only the title and section headings
-are painted; the article body is always plain.
-
-Colour is enabled only when stdout is a terminal, `NO_COLOR` is unset, `TERM` is
-not `dumb`, and `CLICOLOR` is not `0`. `CLICOLOR_FORCE=1` or `--color always`
-forces it on, and `--color never` turns it off.
 
 ## Installation
 
