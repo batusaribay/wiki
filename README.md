@@ -1,6 +1,6 @@
 # wiki-search
 
-Search Wikipedia from the terminal
+A Wikipedia searcher in the terminal
 
 ![wiki-search in a terminal](preview.png)
 
