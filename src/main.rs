@@ -27,15 +27,11 @@ fn usage(code: i32) -> ! {
 usage: wiki-search [options] <query>
 
 options:
-  -w, --wpm <n>      words per minute (default: {DEFAULT_WPM})
-  -f, --full         print the whole article, not just the intro
-  -l, --lang <code>  wikipedia language code (default: en)
-  -h, --help         show this help
-  -V, --version      show the version
-
-examples:
-  wiki-search rust programming language
-  wiki-search --wpm 300 --full alan turing
+  -w, --wpm <n>      Words per minute (default: {DEFAULT_WPM})
+  -f, --full         Print the whole article, not just the intro
+  -l, --lang <code>  Wikipedia language code (default: en)
+  -h, --help         Show this help
+  -V, --version      Show the version
 "
     );
 
