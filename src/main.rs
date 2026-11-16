@@ -23,9 +23,9 @@ fn usage(code: i32) -> ! {
     let text = format!(
         "A Wikipedia browser in the terminal
 
-usage: wiki [options] <query>
+Usage: wiki [options] <query>
 
-options:
+Options:
   -s, --source <name>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
   -w, --wpm <n>        Words per minute (default: {DEFAULT_WPM})
   -f, --full           Print the whole Wikipedia article, not just the intro
@@ -204,7 +204,7 @@ fn main() {
             print_slowly(&sanitize(&article.text), args.wpm);
         }
         Err(message) => {
-            eprintln!("wiki: {message}");
+            eprintln!("error: {message}");
             process::exit(1);
         }
     }

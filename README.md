@@ -1,7 +1,5 @@
 # wiki
 
-A Wikipedia browser in the terminal
-
 ![wiki in a terminal](preview.png)
 
 ## What it is
@@ -74,7 +72,7 @@ COLUMNS=100 wiki serendipity
 A query with no matching article exits with status `1` and prints the reason on
 stderr.
 
-## Sources
+### Sources
 
 | Source | Name | Notes |
 | --- | --- | --- |
