@@ -1,23 +1,8 @@
 # wiki
 
+A Wikipedia browser in the terminal.
+
 ![wiki in a terminal](preview.png)
-
-## What it is
-
-A single Rust binary that searches Wikipedia, It's FOSS, or wikiHow and prints
-the article one word at a time. The default pace is 238 words per minute,
-roughly the average adult reading speed, with short pauses at commas and
-sentence ends. Choose the source with `--source`.
-
-## Why this exists
-
-Reference sites are reading tools that terminals usually use as link dispensers:
-you get a URL, open a browser, and lose the thread. Printing the text in place
-keeps it a single step.
-
-It is also deliberately slow. Dumping a wall of text at terminal speed is
-scanning, not reading. Pacing the output turns a lookup into a reading session.
-The output is plain text with no colour, TUI, pager, or config file.
 
 ## How it works
 
