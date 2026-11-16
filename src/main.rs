@@ -17,25 +17,24 @@ struct Args {
     full: bool,
     lang: String,
     source: Source,
-    instant: bool,
+    slow: bool,
 }
 
 fn usage(code: i32) -> ! {
-    let text = format!(
-        "A Wikipedia browser in the terminal
+    let text = "A Wikipedia browser in the terminal
 
 Usage: wiki [OPTIONS] <QUERY>
 
 Options:
   -s, --source <NAME>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
-  -w, --wpm <N>        Words per minute (default: {DEFAULT_WPM})
-  -i, --instant        Print immediately instead of at reading speed
+  -w, --wpm <N>        Reading speed in words per minute (implies --slow)
+      --slow           Print at reading speed
+  -i, --instant        Print immediately (default)
   -f, --full           Print the whole Wikipedia article, not just the intro
   -l, --lang <CODE>    Wikipedia language code (default: en)
   -h, --help           Print help
   -V, --version        Print version
-"
-    );
+";
 
     if code == 0 {
         print!("{text}");
@@ -52,7 +51,7 @@ fn parse_args() -> Args {
         full: false,
         lang: "en".to_string(),
         source: Source::Wikipedia,
-        instant: false,
+        slow: false,
     };
     let mut words = Vec::new();
     let mut argv = env::args().skip(1);
@@ -79,7 +78,8 @@ fn parse_args() -> Args {
                 process::exit(0);
             }
             "-f" | "--full" => args.full = true,
-            "-i" | "--instant" => args.instant = true,
+            "-i" | "--instant" => args.slow = false,
+            "--slow" => args.slow = true,
             "-s" | "--source" => {
                 let value = take_value("--source");
                 args.source = Source::parse(&value).unwrap_or_else(|| {
@@ -98,6 +98,7 @@ fn parse_args() -> Args {
                     eprintln!("error: --wpm must be greater than 0");
                     usage(2);
                 }
+                args.slow = true;
             }
             "-l" | "--lang" => {
                 args.lang = take_value("--lang").to_lowercase();
@@ -146,7 +147,7 @@ fn extra_pause_ms(word: &str) -> u64 {
     }
 }
 
-fn print_slowly(text: &str, wpm: u64, instant: bool) {
+fn print_slowly(text: &str, wpm: u64, slow: bool) {
     let width = env::var("COLUMNS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
@@ -167,7 +168,7 @@ fn print_slowly(text: &str, wpm: u64, instant: bool) {
             }
             let _ = out.flush();
             column = 0;
-            if !instant {
+            if slow {
                 sleep(Duration::from_millis(450));
             }
             continue;
@@ -189,7 +190,7 @@ fn print_slowly(text: &str, wpm: u64, instant: bool) {
             }
             column += separator.len() + len;
 
-            if !instant {
+            if slow {
                 if out.flush().is_err() {
                     return;
                 }
@@ -202,7 +203,7 @@ fn print_slowly(text: &str, wpm: u64, instant: bool) {
         }
         column = 0;
 
-        if !instant {
+        if slow {
             sleep(Duration::from_millis(450));
         }
     }
@@ -214,7 +215,7 @@ fn main() {
     match fetch(args.source, &args.query, &args.lang, args.full) {
         Ok(article) => {
             println!("{}\n", sanitize(&article.title));
-            print_slowly(&sanitize(&article.text), args.wpm, args.instant);
+            print_slowly(&sanitize(&article.text), args.wpm, args.slow);
         }
         Err(message) => {
             eprintln!("error: {message}");

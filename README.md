@@ -16,11 +16,12 @@ A Wikipedia browser in the terminal
 4. wikiHow is loaded in a local headless Chromium/Chrome because the site
    blocks plain automated requests. The rendered page is reduced to its intro,
    steps, tips, and warnings.
-5. The text is printed word by word. Each word waits `60000 / wpm`
-   milliseconds; commas add 110 ms, sentence ends add 220 ms, and paragraph
-   breaks add 450 ms. `--instant` skips all of these delays.
-6. In reading mode, every word is flushed as it is printed, so the pace is
-   visible even when the output is redirected.
+5. The text prints immediately by default. `--slow` switches to word-by-word
+   reading: each word waits `60000 / wpm` milliseconds, commas add 110 ms,
+   sentence ends add 220 ms, and paragraph breaks add 450 ms. `--wpm` implies
+   `--slow`.
+6. In slow mode, every word is flushed as it is printed, so the pace is visible
+   even when the output is redirected.
 7. Lines wrap to `COLUMNS` (80 when unset), and each source line ends with a
    newline, so paragraphs stay separate. Anything wider than the terminal is
    the terminal's problem, not the formatter's.
@@ -33,12 +34,13 @@ A Wikipedia browser in the terminal
 
 | Command | Action |
 | --- | --- |
-| `wiki <query>` | Read the intro of the top Wikipedia result. |
-| `wiki --source itsfoss <query>` | Read the top It's FOSS result. |
-| `wiki --source wikihow <query>` | Read the top wikiHow result. |
-| `wiki --full <query>` | Read the whole Wikipedia article. |
-| `wiki --wpm 300 <query>` | Read faster or slower. |
-| `wiki --instant <query>` | Print immediately instead of at reading speed. |
+| `wiki <query>` | Print the intro of the top Wikipedia result. |
+| `wiki --source itsfoss <query>` | Print the top It's FOSS result. |
+| `wiki --source wikihow <query>` | Print the top wikiHow result. |
+| `wiki --slow <query>` | Print at reading speed. |
+| `wiki --wpm 300 <query>` | Read faster or slower (implies `--slow`). |
+| `wiki --full <query>` | Print the whole Wikipedia article. |
+| `wiki --instant <query>` | Print immediately (default). |
 | `wiki --lang tr <query>` | Use another Wikipedia edition. |
 | `wiki --help` | Show the help text. |
 | `wiki --version` | Show the version. |
@@ -47,8 +49,8 @@ A Wikipedia browser in the terminal
 
 ```bash
 wiki rust programming language
+wiki --slow alan turing
 wiki --wpm 300 alan turing
-wiki --instant alan turing
 wiki --full history of the bicycle
 wiki --lang tr kedi
 wiki --source itsfoss linux mint
