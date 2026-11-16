@@ -22,7 +22,7 @@ struct Args {
 
 fn usage(code: i32) -> ! {
     let text = format!(
-        "A Wikipedia searcher in the terminal
+        "A Wikipedia browser in the terminal
 
 usage: wiki-search [options] <query>
 
