@@ -173,35 +173,58 @@ fn best_post<'a>(posts: &'a [Value], query: &str) -> Option<&'a Value> {
         return posts.first();
     }
 
-    let terms: Vec<String> = phrase
-        .split_whitespace()
-        .filter(|term| term.chars().count() > 1 && !is_stop_word(term))
-        .map(ToOwned::to_owned)
-        .collect();
-
+    let terms = search_terms(&phrase);
     if terms.is_empty() {
         return posts.first();
     }
 
-    let mut best = None;
-    let mut best_score = 0;
+    let total = posts.len() as f64;
+    let mut document_frequency = vec![0usize; terms.len()];
 
     for post in posts {
         let title = post["title"].as_str().unwrap_or("").to_lowercase();
         let excerpt = post["excerpt"].as_str().unwrap_or("").to_lowercase();
-        let mut score = 0;
 
-        for term in &terms {
-            if title.contains(term) {
-                score += 10;
+        for (index, term) in terms.iter().enumerate() {
+            if title.contains(term.as_str()) || excerpt.contains(term.as_str()) {
+                document_frequency[index] += 1;
             }
-            if excerpt.contains(term) {
-                score += 3;
+        }
+    }
+
+    let weights: Vec<f64> = document_frequency
+        .iter()
+        .map(|&frequency| {
+            if frequency == 0 {
+                0.0
+            } else {
+                1.0 + (total / frequency as f64).ln()
+            }
+        })
+        .collect();
+
+    let mut best = None;
+    let mut best_score = 0.0;
+
+    for post in posts {
+        let title = post["title"].as_str().unwrap_or("").to_lowercase();
+        let excerpt = post["excerpt"].as_str().unwrap_or("").to_lowercase();
+        let mut score = 0.0;
+
+        for (index, term) in terms.iter().enumerate() {
+            if weights[index] == 0.0 {
+                continue;
+            }
+            if title.contains(term.as_str()) {
+                score += 10.0 * weights[index];
+            }
+            if excerpt.contains(term.as_str()) {
+                score += 3.0 * weights[index];
             }
         }
 
         if title.contains(&phrase) {
-            score += 30;
+            score += 30.0;
         }
 
         if score > best_score {
@@ -213,6 +236,19 @@ fn best_post<'a>(posts: &'a [Value], query: &str) -> Option<&'a Value> {
     best
 }
 
+fn search_terms(phrase: &str) -> Vec<String> {
+    phrase
+        .split_whitespace()
+        .map(|term| {
+            term.trim_matches(|character: char| {
+                !character.is_alphanumeric() && character != '-' && character != '\''
+            })
+        })
+        .filter(|term| term.chars().count() > 1 && !is_stop_word(term))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
 fn is_stop_word(word: &str) -> bool {
     matches!(
         word,
@@ -220,10 +256,13 @@ fn is_stop_word(word: &str) -> bool {
             | "and"
             | "are"
             | "for"
+            | "foss"
             | "how"
             | "in"
             | "is"
             | "it"
+            | "it's"
+            | "its"
             | "of"
             | "on"
             | "the"
@@ -455,6 +494,35 @@ mod tests {
 
         let post = best_post(&posts, "linux mint").expect("a matching post");
         assert_eq!(post["title"], "Best Linux Mint Tips");
+    }
+
+    #[test]
+    fn prefers_rare_terms_over_common_ones() {
+        let posts = vec![
+            serde_json::json!({
+                "title": "It's Very Important to be Able to Use Open Source From Top to Bottom",
+                "excerpt": "Interviews from the openEuler Summit"
+            }),
+            serde_json::json!({
+                "title": "SSH to Port Other Than 22",
+                "excerpt": "Learn how to connect via SSH to a non-standard port"
+            }),
+            serde_json::json!({
+                "title": "How to Use Linux",
+                "excerpt": "A guide"
+            }),
+            serde_json::json!({
+                "title": "Use This Tool",
+                "excerpt": "Another guide"
+            }),
+        ];
+
+        let post = best_post(
+            &posts,
+            "how to use ssh with a non-standard port on it's foss",
+        )
+        .expect("a matching post");
+        assert_eq!(post["title"], "SSH to Port Other Than 22");
     }
 
     #[test]
