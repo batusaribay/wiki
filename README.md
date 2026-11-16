@@ -64,7 +64,7 @@ COLUMNS=100 wiki-search serendipity
 A query with no matching article exits with status `1` and prints the reason on
 stderr.
 
-## Installation
+## Install
 
 **Requirements:** Rust 1.88+ and Git.
 
