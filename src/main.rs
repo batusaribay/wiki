@@ -29,7 +29,6 @@ Options:
   -s, --source <NAME>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
   -w, --wpm <N>        Reading speed in words per minute (implies --slow)
       --slow           Print at reading speed
-  -i, --instant        Print immediately (default)
   -f, --full           Print the whole Wikipedia article, not just the intro
   -l, --lang <CODE>    Wikipedia language code (default: en)
   -h, --help           Print help
@@ -78,7 +77,6 @@ fn parse_args() -> Args {
                 process::exit(0);
             }
             "-f" | "--full" => args.full = true,
-            "-i" | "--instant" => args.slow = false,
             "--slow" => args.slow = true,
             "-s" | "--source" => {
                 let value = take_value("--source");

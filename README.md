@@ -40,7 +40,6 @@ A Wikipedia browser in the terminal
 | `wiki --slow <query>` | Print at reading speed. |
 | `wiki --wpm 300 <query>` | Read faster or slower (implies `--slow`). |
 | `wiki --full <query>` | Print the whole Wikipedia article. |
-| `wiki --instant <query>` | Print immediately (default). |
 | `wiki --lang tr <query>` | Use another Wikipedia edition. |
 | `wiki --help` | Show the help text. |
 | `wiki --version` | Show the version. |
