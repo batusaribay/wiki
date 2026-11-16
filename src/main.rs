@@ -23,15 +23,15 @@ fn usage(code: i32) -> ! {
     let text = format!(
         "A Wikipedia browser in the terminal
 
-Usage: wiki [options] <query>
+Usage: wiki [OPTIONS] <QUERY>
 
 Options:
-  -s, --source <name>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
-  -w, --wpm <n>        Words per minute (default: {DEFAULT_WPM})
+  -s, --source <NAME>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
+  -w, --wpm <N>        Words per minute (default: {DEFAULT_WPM})
   -f, --full           Print the whole Wikipedia article, not just the intro
-  -l, --lang <code>    Wikipedia language code (default: en)
-  -h, --help           Show this help
-  -V, --version        Show the version
+  -l, --lang <CODE>    Wikipedia language code (default: en)
+  -h, --help           Print help
+  -V, --version        Print version
 "
     );
 
