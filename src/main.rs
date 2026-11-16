@@ -21,9 +21,9 @@ struct Args {
 
 fn usage(code: i32) -> ! {
     let text = format!(
-        "A terminal browser for Wikipedia, It's FOSS, and wikiHow
+        "A wiki browser in the terminal
 
-usage: wiki-search [options] <query>
+usage: wiki [options] <query>
 
 options:
   -s, --source <name>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
@@ -72,7 +72,7 @@ fn parse_args() -> Args {
         match flag.as_str() {
             "-h" | "--help" => usage(0),
             "-V" | "--version" => {
-                println!("wiki-search {}", env!("CARGO_PKG_VERSION"));
+                println!("wiki {}", env!("CARGO_PKG_VERSION"));
                 process::exit(0);
             }
             "-f" | "--full" => args.full = true,
@@ -204,7 +204,7 @@ fn main() {
             print_slowly(&sanitize(&article.text), args.wpm);
         }
         Err(message) => {
-            eprintln!("wiki-search: {message}");
+            eprintln!("wiki: {message}");
             process::exit(1);
         }
     }

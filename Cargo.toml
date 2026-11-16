@@ -1,18 +1,19 @@
 [package]
-name = "wiki-search"
+name = "wiki"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "A terminal browser for Wikipedia, It's FOSS, and wikiHow"
+description = "A wiki browser in the terminal"
 license = "MIT"
-repository = "https://github.com/batusaribay/wiki-search"
-homepage = "https://github.com/batusaribay/wiki-search"
+repository = "https://github.com/batusaribay/wiki"
+homepage = "https://github.com/batusaribay/wiki"
 readme = "README.md"
 keywords = ["wikipedia", "cli", "reader", "terminal"]
 categories = ["command-line-utilities"]
+publish = false
 
 [[bin]]
-name = "wiki-search"
+name = "wiki"
 path = "src/main.rs"
 
 [dependencies]

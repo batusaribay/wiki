@@ -10,9 +10,9 @@ use serde_json::Value;
 
 const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 const USER_AGENT: &str = concat!(
-    "wiki-search/",
+    "wiki/",
     env!("CARGO_PKG_VERSION"),
-    " (https://github.com/batusaribay/wiki-search)"
+    " (https://github.com/batusaribay/wiki)"
 );
 const ITSFOSS_HOME: &str = "https://itsfoss.com/";
 const WIKIHOW_SEARCH: &str = "https://www.wikihow.com/wikiHowTo?search=";
@@ -320,8 +320,8 @@ fn browser_html(url: &str) -> Result<String, String> {
         "wikiHow needs Chromium or Chrome installed (a headless browser gets past the site's bot check)",
     )?;
 
-    let profile = std::env::temp_dir().join(format!("wiki-search-chrome-{}", std::process::id()));
-    let output = std::env::temp_dir().join(format!("wiki-search-page-{}.html", std::process::id()));
+    let profile = std::env::temp_dir().join(format!("wiki-chrome-{}", std::process::id()));
+    let output = std::env::temp_dir().join(format!("wiki-page-{}.html", std::process::id()));
     let _ = fs::remove_dir_all(&profile);
 
     let file =

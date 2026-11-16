@@ -1,4 +1,4 @@
-$ wiki-search serendipity
+$ wiki serendipity
 Serendipity
 
 Serendipity is an unplanned fortunate discovery. The term was coined by Horace
@@ -10,7 +10,7 @@ history were serendipitous, including penicillin, Post-it notes, Popsicles, and
 the microwave oven, arising from unforeseen circumstances that were then
 recognized and capitalized upon.
 
-$ wiki-search --wpm 400 --lang tr kedi
+$ wiki --wpm 400 --lang tr kedi
 Kedi
 
 Kedi (Felis catus), ayrıca evcil kedi veya ev kedisi olarak da adlandırılır,

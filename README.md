@@ -1,8 +1,8 @@
-# wiki-search
+# wiki
 
-A terminal browser for Wikipedia, It's FOSS, and wikiHow
+A wiki browser in the terminal
 
-![wiki-search in a terminal](preview.png)
+![wiki in a terminal](preview.png)
 
 ## What it is
 
@@ -50,25 +50,25 @@ The output is plain text with no colour, TUI, pager, or config file.
 
 | Command | Action |
 | --- | --- |
-| `wiki-search <query>` | Read the intro of the top Wikipedia result. |
-| `wiki-search --source itsfoss <query>` | Read the top It's FOSS result. |
-| `wiki-search --source wikihow <query>` | Read the top wikiHow result. |
-| `wiki-search --full <query>` | Read the whole Wikipedia article. |
-| `wiki-search --wpm 300 <query>` | Read faster or slower. |
-| `wiki-search --lang tr <query>` | Use another Wikipedia edition. |
-| `wiki-search --help` | Show the help text. |
-| `wiki-search --version` | Show the version. |
+| `wiki <query>` | Read the intro of the top Wikipedia result. |
+| `wiki --source itsfoss <query>` | Read the top It's FOSS result. |
+| `wiki --source wikihow <query>` | Read the top wikiHow result. |
+| `wiki --full <query>` | Read the whole Wikipedia article. |
+| `wiki --wpm 300 <query>` | Read faster or slower. |
+| `wiki --lang tr <query>` | Use another Wikipedia edition. |
+| `wiki --help` | Show the help text. |
+| `wiki --version` | Show the version. |
 
 ### Examples
 
 ```bash
-wiki-search rust programming language
-wiki-search --wpm 300 alan turing
-wiki-search --full history of the bicycle
-wiki-search --lang tr kedi
-wiki-search --source itsfoss linux mint
-wiki-search --source wikihow boil water
-COLUMNS=100 wiki-search serendipity
+wiki rust programming language
+wiki --wpm 300 alan turing
+wiki --full history of the bicycle
+wiki --lang tr kedi
+wiki --source itsfoss linux mint
+wiki --source wikihow boil water
+COLUMNS=100 wiki serendipity
 ```
 
 A query with no matching article exits with status `1` and prints the reason on
@@ -87,13 +87,13 @@ stderr.
 **Requirements:** Rust 1.88+, Git, and Chromium or Chrome for `--source wikihow`.
 
 ```bash
-cargo install --git https://github.com/batusaribay/wiki-search.git --locked
+cargo install --git https://github.com/batusaribay/wiki.git --locked
 ```
 
 ## Uninstall
 
 ```bash
-cargo uninstall wiki-search
+cargo uninstall wiki
 ```
 
 ## Security
