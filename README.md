@@ -30,9 +30,9 @@ The output is plain text with no colour, TUI, pager, or config file.
    the complete article.
 3. It's FOSS is searched through its Ghost content API. The search index is
    downloaded, scored locally, and the best post is fetched as plain text.
-4. wikiHow is fetched through the Jina Reader proxy because wikiHow blocks
-   automated search and article requests. The returned markdown is cleaned into
-   plain text.
+4. wikiHow is loaded in a local headless Chromium/Chrome because the site
+   blocks plain automated requests. The rendered page is reduced to its intro,
+   steps, tips, and warnings.
 5. The text is printed word by word. Each word waits `60000 / wpm`
    milliseconds; commas add 110 ms, sentence ends add 220 ms, and paragraph
    breaks add 450 ms.
@@ -80,11 +80,11 @@ stderr.
 | --- | --- | --- |
 | Wikipedia | `wikipedia` (default) | Any language edition through `--lang`. |
 | It's FOSS | `itsfoss` | Top result from the site's Ghost search index. |
-| wikiHow | `wikihow` | Top result, fetched through the Jina Reader proxy. |
+| wikiHow | `wikihow` | Top result, rendered with headless Chromium/Chrome. |
 
 ## Install
 
-**Requirements:** Rust 1.88+ and Git.
+**Requirements:** Rust 1.88+, Git, and Chromium or Chrome for `--source wikihow`.
 
 ```bash
 cargo install --git https://github.com/batusaribay/wiki-search.git --locked
@@ -100,8 +100,8 @@ cargo uninstall wiki-search
 
 - TLS certificates are verified by `rustls`.
 - Only the selected source is contacted, with read-only `GET` requests.
-- wikiHow requests go through `r.jina.ai`, which receives the search query and
-  article URL.
+- wikiHow pages are loaded in a local headless browser with a temporary profile;
+  no third-party reader proxy is used.
 - No credentials, cookies, configuration, or telemetry are read or sent.
 - Connect and request timeouts are bounded, and responses are capped at 16 MiB.
 - Control characters are stripped from article text before anything is

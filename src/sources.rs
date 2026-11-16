@@ -1,8 +1,11 @@
+use std::fs::{self, File};
 use std::io::Read;
+use std::process::{Command, Stdio};
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use regex::Regex;
+use scraper::node::Node;
+use scraper::{ElementRef, Html, Selector};
 use serde_json::Value;
 
 const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
@@ -13,19 +16,48 @@ const USER_AGENT: &str = concat!(
 );
 const ITSFOSS_HOME: &str = "https://itsfoss.com/";
 const WIKIHOW_SEARCH: &str = "https://www.wikihow.com/wikiHowTo?search=";
-const JINA_READER: &str = "https://r.jina.ai/";
+const BROWSER_TIMEOUT: Duration = Duration::from_secs(40);
 
-static IMAGE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"!\[[^\]]*\]\([^)]*\)").expect("valid image regex"));
-static REFERENCE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[\[\d+\]\]\([^)]*\)").expect("valid reference regex"));
-static LINK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\([^)]*\)").expect("valid link regex"));
-static HEADING_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^#{1,6}\s*").expect("valid heading regex"));
-static BOLD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\*\*").expect("valid bold regex"));
-static BULLET_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^\s*[*-]\s+").expect("valid bullet regex"));
+static BROWSER: LazyLock<Option<String>> = LazyLock::new(|| {
+    [
+        "chromium",
+        "chromium-browser",
+        "google-chrome",
+        "google-chrome-stable",
+        "brave",
+        "brave-browser",
+        "microsoft-edge",
+    ]
+    .into_iter()
+    .find(|candidate| {
+        Command::new(candidate)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    })
+    .map(ToOwned::to_owned)
+});
+
+static RESULT_LINK: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("a.result_link").expect("valid result selector"));
+static PAGE_TITLE: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("title").expect("valid title selector"));
+static SUBTITLE: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("#intro .subtitle").expect("valid subtitle selector"));
+static INTRO: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("#mf-section-0").expect("valid intro selector"));
+static STEP_SECTION: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse(".section.steps").expect("valid step section"));
+static STEP_HEADING: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("h3").expect("valid step heading"));
+static STEP: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse(".step").expect("valid step selector"));
+static TIPS: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("#tips li").expect("valid tips selector"));
+static WARNINGS: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("#warnings li").expect("valid warnings selector"));
 
 pub struct Article {
     pub title: String,
@@ -62,7 +94,7 @@ pub fn fetch(source: Source, query: &str, lang: &str, full: bool) -> Result<Arti
     match source {
         Source::Wikipedia => wikipedia(&agent, query, lang, full),
         Source::ItsFoss => its_foss(&agent, query),
-        Source::WikiHow => wiki_how(&agent, query),
+        Source::WikiHow => wiki_how(query),
     }
 }
 
@@ -273,39 +305,104 @@ fn is_stop_word(word: &str) -> bool {
     )
 }
 
-fn wiki_how(agent: &ureq::Agent, query: &str) -> Result<Article, String> {
-    let search_url = format!("{JINA_READER}{WIKIHOW_SEARCH}{}", urlencode(query));
-    let page = get(agent, &search_url)?;
+fn wiki_how(query: &str) -> Result<Article, String> {
+    let search_url = format!("{WIKIHOW_SEARCH}{}", urlencode(query));
+    let page = browser_html(&search_url)?;
     let article_url = parse_wikihow_result(&page)
         .ok_or_else(|| format!("no wikiHow article found for \"{query}\""))?;
 
-    let page = get(agent, &format!("{JINA_READER}{article_url}"))?;
+    let page = browser_html(&article_url)?;
     parse_wikihow_article(&page)
 }
 
-fn parse_wikihow_result(page: &str) -> Option<String> {
-    let marker = "](https://www.wikihow.com/";
-    let mut offset = 0;
+fn browser_html(url: &str) -> Result<String, String> {
+    let browser = BROWSER.as_deref().ok_or(
+        "wikiHow needs Chromium or Chrome installed (a headless browser gets past the site's bot check)",
+    )?;
 
-    while let Some(position) = page[offset..].find(marker) {
-        let close = offset + position;
-        let url_start = close + 2;
-        let rest = &page[url_start..];
-        let url_len = rest.find(')')?;
-        let url = &rest[..url_len];
-        let title = page[..close]
-            .rfind('[')
-            .map(|open| &page[open + 1..close])
-            .unwrap_or("");
+    let profile = std::env::temp_dir().join(format!("wiki-search-chrome-{}", std::process::id()));
+    let output = std::env::temp_dir().join(format!("wiki-search-page-{}.html", std::process::id()));
+    let _ = fs::remove_dir_all(&profile);
 
-        if title.starts_with("How to ") && is_wikihow_article_url(url) {
-            return Some(url.to_string());
-        }
+    let file =
+        File::create(&output).map_err(|e| format!("could not create browser output: {e}"))?;
+    let mut command = Command::new(browser);
+    command
+        .arg("--headless=new")
+        .arg("--disable-gpu")
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg("--disable-extensions")
+        .arg("--blink-settings=imagesEnabled=false")
+        .arg(format!("--user-data-dir={}", profile.display()))
+        .arg("--dump-dom")
+        .arg(url)
+        .stdout(Stdio::from(file))
+        .stderr(Stdio::null());
 
-        offset = url_start + url_len + 1;
+    let result = run_with_timeout(command, BROWSER_TIMEOUT);
+    let html = fs::read_to_string(&output).unwrap_or_default();
+    let _ = fs::remove_file(&output);
+    let _ = fs::remove_dir_all(&profile);
+    result?;
+
+    if html.is_empty() {
+        return Err("the browser returned an empty page".to_string());
     }
 
-    None
+    Ok(html)
+}
+
+fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), String> {
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("could not start the browser: {e}"))?;
+    let started = Instant::now();
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return if status.success() {
+                    Ok(())
+                } else {
+                    Err(format!("the browser exited with {status}"))
+                };
+            }
+            Ok(None) => {}
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("could not wait for the browser: {e}"));
+            }
+        }
+
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("the browser timed out".to_string());
+        }
+
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn parse_wikihow_result(page: &str) -> Option<String> {
+    let document = Html::parse_document(page);
+
+    document.select(&RESULT_LINK).find_map(|element| {
+        let href = element.value().attr("href")?;
+        let url = if href.starts_with("https://www.wikihow.com/") {
+            href.to_string()
+        } else {
+            format!(
+                "https://www.wikihow.com/{}",
+                href.trim_start_matches("https://www.wikihow.com/")
+                    .trim_start_matches('/')
+            )
+        };
+
+        is_wikihow_article_url(&url).then_some(url)
+    })
 }
 
 fn is_wikihow_article_url(url: &str) -> bool {
@@ -316,78 +413,164 @@ fn is_wikihow_article_url(url: &str) -> bool {
 }
 
 fn parse_wikihow_article(page: &str) -> Result<Article, String> {
-    let title = page
-        .lines()
-        .find_map(|line| line.strip_prefix("Title:"))
-        .unwrap_or("wikiHow")
-        .trim()
-        .to_string();
-    let content = page
-        .split_once("Markdown Content:")
-        .map(|(_, content)| content)
-        .ok_or("wikiHow returned an unexpected response")?;
+    let document = Html::parse_document(page);
+    let title = document
+        .select(&PAGE_TITLE)
+        .next()
+        .map(|element| {
+            element
+                .text()
+                .collect::<String>()
+                .trim()
+                .trim_end_matches(" - wikiHow")
+                .trim()
+                .to_string()
+        })
+        .filter(|title| !title.is_empty())
+        .unwrap_or_else(|| "wikiHow".to_string());
 
-    let text = clean_wikihow_markdown(truncate_wikihow(content));
+    let mut parts = Vec::new();
 
-    if text.is_empty() {
+    if let Some(subtitle) = document.select(&SUBTITLE).next() {
+        push_part(&mut parts, element_text(subtitle));
+    }
+
+    if let Some(intro) = document.select(&INTRO).next() {
+        push_part(&mut parts, element_text(intro));
+    }
+
+    let mut step_number = 0;
+
+    for section in document.select(&STEP_SECTION) {
+        if let Some(heading) = section.select(&STEP_HEADING).next() {
+            push_part(&mut parts, element_text(heading));
+        }
+
+        for step in section.select(&STEP) {
+            let body = element_text(step);
+            if !body.is_empty() {
+                step_number += 1;
+                parts.push(format!("{step_number}. {body}"));
+            }
+        }
+    }
+
+    let tips = collect_list(&document, &TIPS);
+    if !tips.is_empty() {
+        parts.push("Tips".to_string());
+        parts.extend(tips.into_iter().map(|tip| format!("- {tip}")));
+    }
+
+    let warnings = collect_list(&document, &WARNINGS);
+    if !warnings.is_empty() {
+        parts.push("Warnings".to_string());
+        parts.extend(warnings.into_iter().map(|warning| format!("- {warning}")));
+    }
+
+    let text = parts.join("\n\n");
+
+    if text.trim().is_empty() {
         return Err("wikiHow returned no readable text".to_string());
     }
 
     Ok(Article { title, text })
 }
 
-fn truncate_wikihow(content: &str) -> &str {
-    let end = [
-        "\n## References",
-        "\n## About This Article",
-        "\nDid this article help you?",
-    ]
-    .iter()
-    .filter_map(|marker| content.find(marker))
-    .min()
-    .unwrap_or(content.len());
-
-    content[..end].trim_end()
+fn push_part(parts: &mut Vec<String>, text: String) {
+    let text = text.trim();
+    if !text.is_empty() {
+        parts.push(text.to_string());
+    }
 }
 
-fn clean_wikihow_markdown(content: &str) -> String {
-    let text = IMAGE_RE.replace_all(content, "");
-    let text = REFERENCE_RE.replace_all(&text, "");
-    let text = LINK_RE.replace_all(&text, "$1");
+fn collect_list(document: &Html, selector: &Selector) -> Vec<String> {
+    document
+        .select(selector)
+        .map(element_text)
+        .filter(|text| !text.is_empty())
+        .collect()
+}
 
+fn element_text(element: ElementRef<'_>) -> String {
+    let mut text = String::new();
+    collect_element(element, &mut text);
+    normalize_text(&text)
+}
+
+fn collect_element(element: ElementRef<'_>, out: &mut String) {
+    for child in element.children() {
+        match child.value() {
+            Node::Text(text) => out.push_str(text),
+            Node::Element(_) => {
+                let Some(child) = ElementRef::wrap(child) else {
+                    continue;
+                };
+                let name = child.value().name();
+
+                if matches!(name, "script" | "style" | "noscript" | "svg")
+                    || child.value().classes().any(|class| {
+                        matches!(
+                            class,
+                            "wh_vote_container"
+                                | "wh_thumb_response"
+                                | "clearall"
+                                | "mwimg"
+                                | "image_details"
+                                | "pdf_link"
+                                | "reference"
+                                | "ts_popup"
+                                | "ts_close"
+                                | "ts_name"
+                                | "ts_description"
+                                | "ts_source"
+                                | "ts_trustworthy"
+                        )
+                    })
+                {
+                    continue;
+                }
+
+                let block = matches!(
+                    name,
+                    "p" | "div"
+                        | "li"
+                        | "ul"
+                        | "ol"
+                        | "h1"
+                        | "h2"
+                        | "h3"
+                        | "h4"
+                        | "br"
+                        | "tr"
+                        | "table"
+                );
+
+                if name == "li" {
+                    out.push_str("\n- ");
+                } else if block {
+                    out.push('\n');
+                }
+                collect_element(child, out);
+                if block {
+                    out.push('\n');
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn normalize_text(text: &str) -> String {
     let mut lines: Vec<String> = Vec::new();
-    for raw in text.lines() {
-        let line = raw.trim();
 
+    for raw in text.lines() {
+        let line = raw.split_whitespace().collect::<Vec<_>>().join(" ");
         if line.is_empty() {
             if lines.last().is_some_and(|last| !last.is_empty()) {
                 lines.push(String::new());
             }
-            continue;
-        }
-
-        if line == "Advertisement"
-            || line == "Download PDF"
-            || is_step_number(line)
-            || is_video(line)
-        {
-            continue;
-        }
-
-        if line.starts_with('|') {
-            if lines.last().is_some_and(|last| last.starts_with("- ")) {
-                lines.pop();
-            }
-            continue;
-        }
-
-        let line = HEADING_RE.replace(line, "");
-        let line = BOLD_RE.replace_all(&line, "");
-        let line = BULLET_RE.replace(&line, "- ");
-        let line = line.trim();
-
-        if !line.is_empty() {
-            lines.push(line.to_string());
+        } else {
+            lines.push(line);
         }
     }
 
@@ -395,49 +578,7 @@ fn clean_wikihow_markdown(content: &str) -> String {
         lines.pop();
     }
 
-    collapse_periods(&lines.join("\n"))
-}
-
-fn collapse_periods(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut characters = text.chars().peekable();
-
-    while let Some(character) = characters.next() {
-        if character != '.' {
-            out.push(character);
-            continue;
-        }
-
-        let mut count = 1;
-        while characters.peek() == Some(&'.') {
-            characters.next();
-            count += 1;
-        }
-
-        if count == 2 {
-            out.push('.');
-        } else {
-            for _ in 0..count {
-                out.push('.');
-            }
-        }
-    }
-
-    out
-}
-
-fn is_step_number(line: &str) -> bool {
-    let line = line.trim();
-    !line.is_empty()
-        && line
-            .chars()
-            .all(|character| character.is_ascii_digit() || character == '.' || character == ')')
-}
-
-fn is_video(line: &str) -> bool {
-    line.strip_prefix("Video ").is_some_and(|number| {
-        !number.is_empty() && number.chars().all(|character| character.is_ascii_digit())
-    })
+    lines.join("\n")
 }
 
 fn html_attribute(html: &str, name: &str) -> Option<String> {
@@ -551,9 +692,9 @@ mod tests {
     #[test]
     fn parses_the_first_wikihow_search_result() {
         let page = concat!(
-            "[Home](https://www.wikihow.com/Main-Page)",
-            "[How to Boil Water * 883,089 views](https://www.wikihow.com/Boil-Water)",
-            "[How to Boil an Egg](https://www.wikihow.com/Boil-an-Egg)"
+            r#"<a class="result_link" href="https://www.wikihow.com/Category:Water">Water</a>"#,
+            r#"<a class="result_link" href="https://www.wikihow.com/Boil-Water">How to Boil Water</a>"#,
+            r#"<a class="result_link" href="https://www.wikihow.com/Boil-an-Egg">How to Boil an Egg</a>"#
         );
 
         assert_eq!(
@@ -564,38 +705,59 @@ mod tests {
 
     #[test]
     fn rejects_wikihow_categories() {
-        let page = "[HOW TO Category: Water](https://www.wikihow.com/Category:Water)";
+        let page =
+            r#"<a class="result_link" href="https://www.wikihow.com/Category:Water">Water</a>"#;
         assert_eq!(parse_wikihow_result(page), None);
     }
 
     #[test]
-    fn cleans_wikihow_markdown() {
-        let markdown = concat!(
-            "Intro paragraph.\n\n",
-            "Download PDF\n\n",
-            "*   [First section](https://example.com/#first)\n",
-            "|*   [Second section](https://example.com/#second)\n\n",
-            "![Image 1: step](https://www.wikihow.com/images/step.jpg)\n",
-            "1.   \n",
-            "[Video 23](https://example.com/video.mp4)\n\n",
-            "**Step text** with [a link](https://example.com) and [[1]](https://example.com/ref).\n\n",
-            "Double period.[[2]](https://example.com/ref2).\n\n",
-            "Advertisement\n\n",
-            "## Things You Need\n\n",
-            "*   A wrench\n",
-            "*   A jack\n"
-        );
+    fn extracts_wikihow_article_sections() {
+        let page = r#"<!DOCTYPE html>
+<html>
+<head><title>How to Boil Water - wikiHow</title></head>
+<body>
+  <div id="intro"><div class="subtitle">Quick guide</div></div>
+  <div id="mf-section-0"><p>Intro paragraph.</p></div>
+  <div id="Steps">
+    <div class="section steps">
+      <h3>On the stove</h3>
+      <ul><li><div class="step"><b>Fill the pot.</b> Use cold water.<ul><li>Do not overfill.</li></ul></div></li></ul>
+    </div>
+    <div class="section steps">
+      <h3>In the microwave</h3>
+      <ul><li><div class="step"><b>Use a safe bowl.</b> Heat it.</div></li></ul>
+    </div>
+  </div>
+  <div id="tips"><ul><li><div class="tips_li_div">A tip.</div><div class="wh_vote_container">Thanks Helpful 7</div></li></ul></div>
+  <div id="warnings"><ul><li><div class="warnings_li_div">A warning.</div></li></ul></div>
+</body>
+</html>"#;
 
-        assert_eq!(
-            clean_wikihow_markdown(markdown),
-            "Intro paragraph.\n\nStep text with a link and .\n\nDouble period.\n\nThings You Need\n\n- A wrench\n- A jack"
-        );
-    }
+        let article = parse_wikihow_article(page).expect("a parsed article");
+        assert_eq!(article.title, "How to Boil Water");
 
-    #[test]
-    fn truncates_wikihow_footer() {
-        let content = "Body text.\n\n## References\n\nstuff\n\n## About This Article\n\nmore";
-        assert_eq!(truncate_wikihow(content), "Body text.");
+        for expected in [
+            "Quick guide",
+            "Intro paragraph.",
+            "On the stove",
+            "1. Fill the pot. Use cold water.",
+            "- Do not overfill.",
+            "In the microwave",
+            "2. Use a safe bowl. Heat it.",
+            "Tips",
+            "- A tip.",
+            "Warnings",
+            "- A warning.",
+        ] {
+            assert!(
+                article.text.contains(expected),
+                "missing {expected:?} in {:?}",
+                article.text
+            );
+        }
+
+        assert!(!article.text.contains("Thanks"));
+        assert!(!article.text.contains("Helpful"));
     }
 
     #[test]
