@@ -1,6 +1,6 @@
 # wiki
 
-A wiki browser in the terminal
+A Wikipedia browser in the terminal
 
 ![wiki in a terminal](preview.png)
 
