@@ -1,6 +1,6 @@
 # wiki
 
-A Wikipedia browser in the terminal.
+A Wikipedia browser in the terminal
 
 ![wiki in a terminal](preview.png)
 
@@ -18,9 +18,9 @@ A Wikipedia browser in the terminal.
    steps, tips, and warnings.
 5. The text is printed word by word. Each word waits `60000 / wpm`
    milliseconds; commas add 110 ms, sentence ends add 220 ms, and paragraph
-   breaks add 450 ms.
-6. Every word is flushed as it is printed, so the pace is visible even when the
-   output is redirected.
+   breaks add 450 ms. `--instant` skips all of these delays.
+6. In reading mode, every word is flushed as it is printed, so the pace is
+   visible even when the output is redirected.
 7. Lines wrap to `COLUMNS` (80 when unset), and each source line ends with a
    newline, so paragraphs stay separate. Anything wider than the terminal is
    the terminal's problem, not the formatter's.
@@ -38,6 +38,7 @@ A Wikipedia browser in the terminal.
 | `wiki --source wikihow <query>` | Read the top wikiHow result. |
 | `wiki --full <query>` | Read the whole Wikipedia article. |
 | `wiki --wpm 300 <query>` | Read faster or slower. |
+| `wiki --instant <query>` | Print immediately instead of at reading speed. |
 | `wiki --lang tr <query>` | Use another Wikipedia edition. |
 | `wiki --help` | Show the help text. |
 | `wiki --version` | Show the version. |
@@ -47,6 +48,7 @@ A Wikipedia browser in the terminal.
 ```bash
 wiki rust programming language
 wiki --wpm 300 alan turing
+wiki --instant alan turing
 wiki --full history of the bicycle
 wiki --lang tr kedi
 wiki --source itsfoss linux mint

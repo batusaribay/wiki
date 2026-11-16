@@ -17,6 +17,7 @@ struct Args {
     full: bool,
     lang: String,
     source: Source,
+    instant: bool,
 }
 
 fn usage(code: i32) -> ! {
@@ -28,6 +29,7 @@ Usage: wiki [OPTIONS] <QUERY>
 Options:
   -s, --source <NAME>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
   -w, --wpm <N>        Words per minute (default: {DEFAULT_WPM})
+  -i, --instant        Print immediately instead of at reading speed
   -f, --full           Print the whole Wikipedia article, not just the intro
   -l, --lang <CODE>    Wikipedia language code (default: en)
   -h, --help           Print help
@@ -50,6 +52,7 @@ fn parse_args() -> Args {
         full: false,
         lang: "en".to_string(),
         source: Source::Wikipedia,
+        instant: false,
     };
     let mut words = Vec::new();
     let mut argv = env::args().skip(1);
@@ -76,6 +79,7 @@ fn parse_args() -> Args {
                 process::exit(0);
             }
             "-f" | "--full" => args.full = true,
+            "-i" | "--instant" => args.instant = true,
             "-s" | "--source" => {
                 let value = take_value("--source");
                 args.source = Source::parse(&value).unwrap_or_else(|| {
@@ -142,7 +146,7 @@ fn extra_pause_ms(word: &str) -> u64 {
     }
 }
 
-fn print_slowly(text: &str, wpm: u64) {
+fn print_slowly(text: &str, wpm: u64, instant: bool) {
     let width = env::var("COLUMNS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
@@ -163,7 +167,9 @@ fn print_slowly(text: &str, wpm: u64) {
             }
             let _ = out.flush();
             column = 0;
-            sleep(Duration::from_millis(450));
+            if !instant {
+                sleep(Duration::from_millis(450));
+            }
             continue;
         }
 
@@ -178,12 +184,17 @@ fn print_slowly(text: &str, wpm: u64) {
             }
 
             let separator = if column > 0 { " " } else { "" };
-            if write!(out, "{separator}{word}").is_err() || out.flush().is_err() {
+            if write!(out, "{separator}{word}").is_err() {
                 return;
             }
             column += separator.len() + len;
 
-            sleep(per_word + Duration::from_millis(extra_pause_ms(word)));
+            if !instant {
+                if out.flush().is_err() {
+                    return;
+                }
+                sleep(per_word + Duration::from_millis(extra_pause_ms(word)));
+            }
         }
 
         if writeln!(out).is_err() || out.flush().is_err() {
@@ -191,7 +202,9 @@ fn print_slowly(text: &str, wpm: u64) {
         }
         column = 0;
 
-        sleep(Duration::from_millis(450));
+        if !instant {
+            sleep(Duration::from_millis(450));
+        }
     }
 }
 
@@ -201,7 +214,7 @@ fn main() {
     match fetch(args.source, &args.query, &args.lang, args.full) {
         Ok(article) => {
             println!("{}\n", sanitize(&article.title));
-            print_slowly(&sanitize(&article.text), args.wpm);
+            print_slowly(&sanitize(&article.text), args.wpm, args.instant);
         }
         Err(message) => {
             eprintln!("error: {message}");
