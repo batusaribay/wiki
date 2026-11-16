@@ -1,37 +1,37 @@
+mod sources;
+
 use std::env;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::process;
 use std::thread::sleep;
 use std::time::Duration;
 
+use sources::{Source, fetch};
+
 const DEFAULT_WPM: u64 = 238;
 const DEFAULT_WIDTH: usize = 80;
-const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
-const USER_AGENT: &str = concat!(
-    "wiki-search/",
-    env!("CARGO_PKG_VERSION"),
-    " (https://github.com/batusaribay/wiki-search)"
-);
 
 struct Args {
     query: String,
     wpm: u64,
     full: bool,
     lang: String,
+    source: Source,
 }
 
 fn usage(code: i32) -> ! {
     let text = format!(
-        "A Wikipedia browser in the terminal
+        "A terminal browser for Wikipedia, It's FOSS, and wikiHow
 
 usage: wiki-search [options] <query>
 
 options:
-  -w, --wpm <n>      Words per minute (default: {DEFAULT_WPM})
-  -f, --full         Print the whole article, not just the intro
-  -l, --lang <code>  Wikipedia language code (default: en)
-  -h, --help         Show this help
-  -V, --version      Show the version
+  -s, --source <name>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
+  -w, --wpm <n>        Words per minute (default: {DEFAULT_WPM})
+  -f, --full           Print the whole Wikipedia article, not just the intro
+  -l, --lang <code>    Wikipedia language code (default: en)
+  -h, --help           Show this help
+  -V, --version        Show the version
 "
     );
 
@@ -49,6 +49,7 @@ fn parse_args() -> Args {
         wpm: DEFAULT_WPM,
         full: false,
         lang: "en".to_string(),
+        source: Source::Wikipedia,
     };
     let mut words = Vec::new();
     let mut argv = env::args().skip(1);
@@ -75,6 +76,14 @@ fn parse_args() -> Args {
                 process::exit(0);
             }
             "-f" | "--full" => args.full = true,
+            "-s" | "--source" => {
+                let value = take_value("--source");
+                args.source = Source::parse(&value).unwrap_or_else(|| {
+                    eprintln!("error: unknown source: {value}");
+                    eprintln!("available sources: {}", Source::NAMES);
+                    usage(2);
+                });
+            }
             "-w" | "--wpm" => {
                 let value = take_value("--wpm");
                 args.wpm = value.parse().unwrap_or_else(|_| {
@@ -106,70 +115,6 @@ fn parse_args() -> Args {
         usage(2);
     }
     args
-}
-
-fn urlencode(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for byte in input.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char)
-            }
-            b' ' => out.push_str("%20"),
-            _ => out.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    out
-}
-
-fn fetch_article(args: &Args) -> Result<(String, String), String> {
-    let url = format!(
-        "https://{}.wikipedia.org/w/api.php?action=query&generator=search\
-         &gsrsearch={}&gsrlimit=1&prop=extracts{}&explaintext=1&format=json&redirects=1",
-        args.lang,
-        urlencode(&args.query),
-        if args.full { "" } else { "&exintro=1" },
-    );
-
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30))
-        .user_agent(USER_AGENT)
-        .build();
-
-    let response = agent
-        .get(&url)
-        .call()
-        .map_err(|e| format!("request failed: {e}"))?;
-
-    let mut body = String::new();
-    response
-        .into_reader()
-        .take(MAX_RESPONSE_BYTES)
-        .read_to_string(&mut body)
-        .map_err(|e| format!("could not read response: {e}"))?;
-
-    let json: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("could not parse response: {e}"))?;
-
-    let pages = json["query"]["pages"]
-        .as_object()
-        .ok_or_else(|| format!("no wikipedia article found for \"{}\"", args.query))?;
-
-    let page = pages
-        .values()
-        .next()
-        .ok_or_else(|| format!("no wikipedia article found for \"{}\"", args.query))?;
-
-    let title = page["title"].as_str().unwrap_or("untitled").to_string();
-    let raw = page["extract"].as_str().unwrap_or("");
-    let extract = sanitize(raw).trim().to_string();
-
-    if extract.is_empty() {
-        return Err(format!("article \"{title}\" has no readable text"));
-    }
-
-    Ok((title, extract))
 }
 
 fn sanitize(text: &str) -> String {
@@ -253,10 +198,10 @@ fn print_slowly(text: &str, wpm: u64) {
 fn main() {
     let args = parse_args();
 
-    match fetch_article(&args) {
-        Ok((title, text)) => {
-            println!("{title}\n");
-            print_slowly(&text, args.wpm);
+    match fetch(args.source, &args.query, &args.lang, args.full) {
+        Ok(article) => {
+            println!("{}\n", sanitize(&article.title));
+            print_slowly(&sanitize(&article.text), args.wpm);
         }
         Err(message) => {
             eprintln!("wiki-search: {message}");
@@ -268,18 +213,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn urlencode_escapes_spaces_and_non_ascii() {
-        assert_eq!(urlencode("rust language"), "rust%20language");
-        assert_eq!(urlencode("kedi (hayvan)"), "kedi%20%28hayvan%29");
-        assert_eq!(urlencode("a&b=c"), "a%26b%3Dc");
-    }
-
-    #[test]
-    fn urlencode_keeps_unreserved_characters() {
-        assert_eq!(urlencode("AZaz09-_.~"), "AZaz09-_.~");
-    }
 
     #[test]
     fn sanitize_strips_control_characters_but_keeps_newlines() {

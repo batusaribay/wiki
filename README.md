@@ -1,20 +1,21 @@
 # wiki-search
 
-A Wikipedia browser in the terminal
+A terminal browser for Wikipedia, It's FOSS, and wikiHow
 
 ![wiki-search in a terminal](preview.png)
 
 ## What it is
 
-A single Rust binary that searches Wikipedia and prints the article one word at
-a time. The default pace is 238 words per minute, roughly the average adult
-reading speed, with short pauses at commas and sentence ends.
+A single Rust binary that searches Wikipedia, It's FOSS, or wikiHow and prints
+the article one word at a time. The default pace is 238 words per minute,
+roughly the average adult reading speed, with short pauses at commas and
+sentence ends. Choose the source with `--source`.
 
 ## Why this exists
 
-Wikipedia is a reading tool that terminals usually use as a link dispenser: you
-get a URL, open a browser, and lose the thread. Printing the text in place keeps
-it a single step.
+Reference sites are reading tools that terminals usually use as link dispensers:
+you get a URL, open a browser, and lose the thread. Printing the text in place
+keeps it a single step.
 
 It is also deliberately slow. Dumping a wall of text at terminal speed is
 scanning, not reading. Pacing the output turns a lookup into a reading session.
@@ -22,21 +23,26 @@ The output is plain text with no colour, TUI, pager, or config file.
 
 ## How it works
 
-1. The query is joined from the arguments and URL-encoded.
-2. One request to the Wikipedia API (`generator=search`, `prop=extracts`,
-   `explaintext=1`) returns the top result and its plain-text extract.
-3. The intro is requested with `exintro=1`. `--full` drops that filter and asks
-   for the complete article.
-4. The text is printed word by word. Each word waits `60000 / wpm`
+1. The query is joined from the arguments, URL-encoded, and sent to the selected
+   source.
+2. Wikipedia is queried through its API (`generator=search`, `prop=extracts`,
+   `explaintext=1`). The intro is requested with `exintro=1`; `--full` asks for
+   the complete article.
+3. It's FOSS is searched through its Ghost content API. The search index is
+   downloaded, scored locally, and the best post is fetched as plain text.
+4. wikiHow is fetched through the Jina Reader proxy because wikiHow blocks
+   automated search and article requests. The returned markdown is cleaned into
+   plain text.
+5. The text is printed word by word. Each word waits `60000 / wpm`
    milliseconds; commas add 110 ms, sentence ends add 220 ms, and paragraph
    breaks add 450 ms.
-5. Every word is flushed as it is printed, so the pace is visible even when the
+6. Every word is flushed as it is printed, so the pace is visible even when the
    output is redirected.
-6. Lines wrap to `COLUMNS` (80 when unset), and each source line ends with a
+7. Lines wrap to `COLUMNS` (80 when unset), and each source line ends with a
    newline, so paragraphs stay separate. Anything wider than the terminal is
    the terminal's problem, not the formatter's.
-7. TLS is handled by `rustls`. The request has a 10-second connect timeout, a
-   30-second overall timeout, and a 16 MiB response cap.
+8. TLS is handled by `rustls`. Requests have a 10-second connect timeout, a
+   60-second overall timeout, and a 16 MiB response cap.
 
 ## Usage
 
@@ -44,8 +50,10 @@ The output is plain text with no colour, TUI, pager, or config file.
 
 | Command | Action |
 | --- | --- |
-| `wiki-search <query>` | Read the intro of the top search result. |
-| `wiki-search --full <query>` | Read the whole article. |
+| `wiki-search <query>` | Read the intro of the top Wikipedia result. |
+| `wiki-search --source itsfoss <query>` | Read the top It's FOSS result. |
+| `wiki-search --source wikihow <query>` | Read the top wikiHow result. |
+| `wiki-search --full <query>` | Read the whole Wikipedia article. |
 | `wiki-search --wpm 300 <query>` | Read faster or slower. |
 | `wiki-search --lang tr <query>` | Use another Wikipedia edition. |
 | `wiki-search --help` | Show the help text. |
@@ -58,11 +66,21 @@ wiki-search rust programming language
 wiki-search --wpm 300 alan turing
 wiki-search --full history of the bicycle
 wiki-search --lang tr kedi
+wiki-search --source itsfoss linux mint
+wiki-search --source wikihow boil water
 COLUMNS=100 wiki-search serendipity
 ```
 
 A query with no matching article exits with status `1` and prints the reason on
 stderr.
+
+## Sources
+
+| Source | Name | Notes |
+| --- | --- | --- |
+| Wikipedia | `wikipedia` (default) | Any language edition through `--lang`. |
+| It's FOSS | `itsfoss` | Top result from the site's Ghost search index. |
+| wikiHow | `wikihow` | Top result, fetched through the Jina Reader proxy. |
 
 ## Install
 
@@ -81,7 +99,9 @@ cargo uninstall wiki-search
 ## Security
 
 - TLS certificates are verified by `rustls`.
-- Only the public Wikipedia API is contacted, with a read-only `GET` request.
+- Only the selected source is contacted, with read-only `GET` requests.
+- wikiHow requests go through `r.jina.ai`, which receives the search query and
+  article URL.
 - No credentials, cookies, configuration, or telemetry are read or sent.
 - Connect and request timeouts are bounded, and responses are capped at 16 MiB.
 - Control characters are stripped from article text before anything is
