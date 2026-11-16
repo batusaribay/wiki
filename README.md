@@ -1,6 +1,6 @@
 # wiki
 
-A Wikipedia browser in the terminal
+A Rust CLI reader for Wikipedia, It's FOSS, and wikiHow.
 
 ![wiki in a terminal](preview.png)
 

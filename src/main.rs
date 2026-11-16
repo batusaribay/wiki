@@ -21,7 +21,7 @@ struct Args {
 }
 
 fn usage(code: i32) -> ! {
-    let text = "A Wikipedia browser in the terminal
+    let text = "A Rust CLI reader for Wikipedia, It's FOSS, and wikiHow
 
 Usage: wiki [OPTIONS] <QUERY>
 
