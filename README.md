@@ -1,6 +1,6 @@
 # wiki
 
-A Rust CLI Wikipedia browser
+A Rust CLI to read Wikipedia and other sources
 
 ![wiki in a terminal](preview.png)
 
