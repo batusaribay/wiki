@@ -1,8 +1,9 @@
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::LazyLock;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use scraper::node::Node;
 use scraper::{ElementRef, Html, Selector};
@@ -104,12 +105,13 @@ fn get(agent: &ureq::Agent, url: &str) -> Result<String, String> {
         .call()
         .map_err(|e| format!("request failed: {e}"))?;
 
-    let mut body = String::new();
+    let mut bytes = Vec::new();
     response
         .into_reader()
         .take(MAX_RESPONSE_BYTES)
-        .read_to_string(&mut body)
+        .read_to_end(&mut bytes)
         .map_err(|e| format!("could not read response: {e}"))?;
+    let body = String::from_utf8_lossy(&bytes).into_owned();
 
     if body.is_empty() {
         return Err("the server returned an empty response".to_string());
@@ -119,6 +121,7 @@ fn get(agent: &ureq::Agent, url: &str) -> Result<String, String> {
 }
 
 fn wikipedia(agent: &ureq::Agent, query: &str, lang: &str, full: bool) -> Result<Article, String> {
+    validate_lang(lang)?;
     let url = format!(
         "https://{}.wikipedia.org/w/api.php?action=query&generator=search\
          &gsrsearch={}&gsrlimit=1&prop=extracts{}&explaintext=1&format=json&redirects=1",
@@ -320,12 +323,18 @@ fn browser_html(url: &str) -> Result<String, String> {
         "wikiHow needs Chromium or Chrome installed (a headless browser gets past the site's bot check)",
     )?;
 
-    let profile = std::env::temp_dir().join(format!("wiki-chrome-{}", std::process::id()));
-    let output = std::env::temp_dir().join(format!("wiki-page-{}.html", std::process::id()));
-    let _ = fs::remove_dir_all(&profile);
+    // A predictable name in the shared temp directory can be pre-created as a
+    // symlink by another local user. Create a private, uniquely named work
+    // directory instead (and keep Chromium's profile inside it).
+    let (work, output) = private_work_dir()?;
+    let profile = work.join("profile");
 
-    let file =
-        File::create(&output).map_err(|e| format!("could not create browser output: {e}"))?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output)
+        .map_err(|e| format!("could not create browser output: {e}"))?;
+
     let mut command = Command::new(browser);
     command
         .arg("--headless=new")
@@ -341,9 +350,8 @@ fn browser_html(url: &str) -> Result<String, String> {
         .stderr(Stdio::null());
 
     let result = run_with_timeout(command, BROWSER_TIMEOUT);
-    let html = fs::read_to_string(&output).unwrap_or_default();
-    let _ = fs::remove_file(&output);
-    let _ = fs::remove_dir_all(&profile);
+    let html = read_limited(&output);
+    let _ = fs::remove_dir_all(&work);
     result?;
 
     if html.is_empty() {
@@ -351,6 +359,58 @@ fn browser_html(url: &str) -> Result<String, String> {
     }
 
     Ok(html)
+}
+
+fn private_work_dir() -> Result<(PathBuf, PathBuf), String> {
+    for attempt in 0..16 {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let dir =
+            std::env::temp_dir().join(format!("wiki-{}-{nanos}-{attempt}", std::process::id()));
+        match fs::create_dir(&dir) {
+            Ok(()) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+                }
+                let output = dir.join("page.html");
+                return Ok((dir, output));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!("could not create a temporary directory: {error}"));
+            }
+        }
+    }
+    Err("could not create a unique temporary directory".to_string())
+}
+
+fn read_limited(path: &Path) -> String {
+    let Ok(file) = File::open(path) else {
+        return String::new();
+    };
+    let mut bytes = Vec::new();
+    let _ = file.take(MAX_RESPONSE_BYTES).read_to_end(&mut bytes);
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn validate_lang(lang: &str) -> Result<(), String> {
+    let valid = !lang.is_empty()
+        && lang.len() <= 16
+        && lang
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character == '-')
+        && !lang.starts_with('-')
+        && !lang.ends_with('-')
+        && !lang.contains("--");
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("invalid Wikipedia language code \"{lang}\""))
+    }
 }
 
 fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), String> {
@@ -758,6 +818,18 @@ mod tests {
 
         assert!(!article.text.contains("Thanks"));
         assert!(!article.text.contains("Helpful"));
+    }
+
+    #[test]
+    fn accepts_only_plain_language_codes() {
+        assert!(validate_lang("en").is_ok());
+        assert!(validate_lang("zh-min-nan").is_ok());
+        assert!(validate_lang("simple").is_ok());
+        assert!(validate_lang("../evil").is_err());
+        assert!(validate_lang("en/us").is_err());
+        assert!(validate_lang("en_US").is_err());
+        assert!(validate_lang("-en").is_err());
+        assert!(validate_lang("").is_err());
     }
 
     #[test]
