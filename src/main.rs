@@ -18,6 +18,7 @@ struct Args {
     lang: String,
     source: Source,
     slow: bool,
+    json: bool,
 }
 
 fn usage(code: i32) -> ! {
@@ -31,6 +32,7 @@ Options:
       --slow           Print at reading speed
   -f, --full           Print the whole Wikipedia article, not just the intro
   -l, --lang <CODE>    Wikipedia language code (default: en)
+      --json           Print the article as JSON
   -h, --help           Print help
   -V, --version        Print version
 ";
@@ -51,6 +53,7 @@ fn parse_args() -> Args {
         lang: "en".to_string(),
         source: Source::Wikipedia,
         slow: false,
+        json: false,
     };
     let mut words = Vec::new();
     let mut argv = env::args().skip(1);
@@ -78,6 +81,7 @@ fn parse_args() -> Args {
             }
             "-f" | "--full" => args.full = true,
             "--slow" => args.slow = true,
+            "--json" => args.json = true,
             "-s" | "--source" => {
                 let value = take_value("--source");
                 args.source = Source::parse(&value).unwrap_or_else(|| {
@@ -212,6 +216,23 @@ fn main() {
 
     match fetch(args.source, &args.query, &args.lang, args.full) {
         Ok(article) => {
+            if args.json {
+                let value = serde_json::json!({
+                    "source": args.source.name(),
+                    "query": args.query,
+                    "language": if args.source == Source::Wikipedia { Some(&args.lang) } else { None },
+                    "title": article.title,
+                    "text": article.text,
+                });
+                match serde_json::to_writer_pretty(io::stdout(), &value) {
+                    Ok(()) => println!(),
+                    Err(error) => {
+                        eprintln!("error: {error}");
+                        process::exit(1);
+                    }
+                }
+                return;
+            }
             println!("{}\n", sanitize(&article.title));
             print_slowly(&sanitize(&article.text), args.wpm, args.slow);
         }

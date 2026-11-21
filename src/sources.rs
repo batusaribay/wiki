@@ -75,6 +75,14 @@ pub enum Source {
 impl Source {
     pub const NAMES: &str = "wikipedia, itsfoss, wikihow";
 
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Wikipedia => "wikipedia",
+            Self::ItsFoss => "itsfoss",
+            Self::WikiHow => "wikihow",
+        }
+    }
+
     pub fn parse(value: &str) -> Option<Self> {
         match value.to_lowercase().as_str() {
             "wikipedia" | "wiki" => Some(Self::Wikipedia),
