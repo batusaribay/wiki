@@ -1,4 +1,5 @@
 mod sources;
+mod theme;
 
 use std::env;
 use std::io::{self, Write};
@@ -7,6 +8,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use sources::{Source, fetch};
+use theme::{ColorMode, Role, Theme};
 
 const DEFAULT_WPM: u64 = 238;
 const DEFAULT_WIDTH: usize = 80;
@@ -19,6 +21,7 @@ struct Args {
     source: Source,
     slow: bool,
     json: bool,
+    color: ColorMode,
 }
 
 fn usage(code: i32) -> ! {
@@ -33,6 +36,7 @@ Options:
   -f, --full           Print the whole Wikipedia article, not just the intro
   -l, --lang <CODE>    Wikipedia language code (default: en)
       --json           Print the article as JSON
+      --color <WHEN>   Color: auto, always, or never (default: auto)
   -h, --help           Print help
   -V, --version        Print version
 ";
@@ -54,6 +58,7 @@ fn parse_args() -> Args {
         source: Source::Wikipedia,
         slow: false,
         json: false,
+        color: ColorMode::Auto,
     };
     let mut words = Vec::new();
     let mut argv = env::args().skip(1);
@@ -82,6 +87,14 @@ fn parse_args() -> Args {
             "-f" | "--full" => args.full = true,
             "--slow" => args.slow = true,
             "--json" => args.json = true,
+            "--color" => {
+                let value = take_value("--color");
+                args.color = ColorMode::parse(&value).unwrap_or_else(|| {
+                    eprintln!("error: unknown color mode: {value}");
+                    eprintln!("available modes: auto, always, never");
+                    usage(2);
+                });
+            }
             "-s" | "--source" => {
                 let value = take_value("--source");
                 args.source = Source::parse(&value).unwrap_or_else(|| {
@@ -233,7 +246,11 @@ fn main() {
                 }
                 return;
             }
-            println!("{}\n", sanitize(&article.title));
+            let theme = Theme::from_env(args.color);
+            println!(
+                "{}\n",
+                theme.paint(Role::Heading, &sanitize(&article.title))
+            );
             print_slowly(&sanitize(&article.text), args.wpm, args.slow);
         }
         Err(message) => {

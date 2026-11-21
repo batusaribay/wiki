@@ -40,6 +40,7 @@ Options:
   -f, --full           Print the whole Wikipedia article, not just the intro
   -l, --lang <CODE>    Wikipedia language code (default: en)
       --json           Print the article as JSON
+      --color <WHEN>   Color output: auto, always, or never [default: auto]
   -h, --help           Print help
   -V, --version        Print version
 ```
@@ -72,6 +73,11 @@ wikiHow browser uses a temporary local profile and no third-party reader proxy.
 No credentials, cookies, configuration, or telemetry are read or sent. Control
 characters are stripped from article text before printing. Unsafe code is
 forbidden by the package lint configuration.
+
+Color uses the terminal palette and ANSI attributes only. The article title is
+the only styled text; body text inherits the terminal foreground. `--color
+never`, `NO_COLOR`, `CLICOLOR=0`, `TERM=dumb`, and non-terminal output all
+disable it. JSON is never colored.
 
 ## Install
 
