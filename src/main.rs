@@ -50,6 +50,9 @@ Options:
 }
 
 fn parse_args() -> Args {
+    if env::args_os().count() == 1 {
+        usage(0);
+    }
     let mut args = Args {
         query: String::new(),
         wpm: DEFAULT_WPM,
