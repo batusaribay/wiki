@@ -45,8 +45,6 @@ Options:
   -V, --version        Print version
 ```
 
-Typical calls:
-
 ```bash
 wiki rust programming language
 wiki --slow alan turing
