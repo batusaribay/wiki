@@ -1,6 +1,6 @@
 # wiki
 
-A Rust CLI to read Wikipedia and other sources
+A Rust CLI to read Wikipedia
 
 ![wiki in a terminal](preview.png)
 
@@ -58,24 +58,13 @@ COLUMNS=100 wiki serendipity
 
 ## Notes
 
-Sources are `wikipedia` with any language through `--lang`, `itsfoss` with the
-top result from the Ghost search index, and `wikihow` with the top result
-rendered through a local headless browser.
+`--full` applies only to Wikipedia. It's FOSS and wikiHow return their best
+matching article, and wikiHow requires Chromium or Chrome.
 
-A query with no matching article exits `1` and prints the reason on stderr.
-`--wpm` implies `--slow`, and in slow mode every word is flushed as it prints,
-so the pace is visible even when output is redirected.
+## Config
 
-Only the selected source is contacted, with read-only `GET` requests. The
-wikiHow browser uses a temporary local profile and no third-party reader proxy.
-No credentials, cookies, configuration, or telemetry are read or sent. Control
-characters are stripped from article text before printing. Unsafe code is
-forbidden by the package lint configuration.
-
-Color uses the terminal palette and ANSI attributes only. The article title is
-the only styled text; body text inherits the terminal foreground. `--color
-never`, `NO_COLOR`, `CLICOLOR=0`, `TERM=dumb`, and non-terminal output all
-disable it. JSON is never colored.
+Reads `~/.config/wiki/config.toml` if present. Flags override the file;
+defaults apply otherwise.
 
 ## Install
 

@@ -1,3 +1,4 @@
+mod config;
 mod sources;
 mod theme;
 
@@ -25,7 +26,7 @@ struct Args {
 }
 
 fn usage(code: i32) -> ! {
-    let text = "A Rust CLI to read Wikipedia and other sources
+    let text = "A Rust CLI to read Wikipedia
 
 Usage: wiki [OPTIONS] <QUERY>
 
@@ -42,15 +43,35 @@ Options:
 ";
 
     if code == 0 {
-        print!("{text}");
+        let mut stdout = io::stdout().lock();
+        finish_output(write!(stdout, "{text}"));
     } else {
-        eprint!("{text}");
+        let mut stderr = io::stderr().lock();
+        let _ = write!(stderr, "{text}");
     }
     process::exit(code);
 }
 
+fn reject_flag_value(flag: &str, inline: &Option<String>) {
+    if inline.is_some() {
+        eprintln!("error: {flag} does not take a value");
+        usage(2);
+    }
+}
+
 fn parse_args() -> Args {
-    if env::args_os().count() == 1 {
+    let raw_args = match env::args_os()
+        .skip(1)
+        .map(|arg| arg.into_string())
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(args) => args,
+        Err(_) => {
+            eprintln!("error: arguments must be valid UTF-8");
+            usage(2);
+        }
+    };
+    if raw_args.is_empty() {
         usage(0);
     }
     let mut args = Args {
@@ -64,9 +85,16 @@ fn parse_args() -> Args {
         color: ColorMode::Auto,
     };
     let mut words = Vec::new();
-    let mut argv = env::args().skip(1);
+    let mut source_set = false;
+    let mut lang_set = false;
+    let mut wpm_set = false;
+    let mut argv = raw_args.into_iter();
 
     while let Some(arg) = argv.next() {
+        if arg == "--" {
+            words.extend(argv);
+            break;
+        }
         let (flag, inline) = match arg.split_once('=') {
             Some((f, v)) if f.starts_with('-') => (f.to_string(), Some(v.to_string())),
             _ => (arg.clone(), None),
@@ -82,14 +110,27 @@ fn parse_args() -> Args {
         };
 
         match flag.as_str() {
-            "-h" | "--help" => usage(0),
+            "-h" | "--help" => {
+                reject_flag_value(&flag, &inline);
+                usage(0);
+            }
             "-V" | "--version" => {
+                reject_flag_value(&flag, &inline);
                 println!("wiki {}", env!("CARGO_PKG_VERSION"));
                 process::exit(0);
             }
-            "-f" | "--full" => args.full = true,
-            "--slow" => args.slow = true,
-            "--json" => args.json = true,
+            "-f" | "--full" => {
+                reject_flag_value(&flag, &inline);
+                args.full = true;
+            }
+            "--slow" => {
+                reject_flag_value(&flag, &inline);
+                args.slow = true;
+            }
+            "--json" => {
+                reject_flag_value(&flag, &inline);
+                args.json = true;
+            }
             "--color" => {
                 let value = take_value("--color");
                 args.color = ColorMode::parse(&value).unwrap_or_else(|| {
@@ -105,6 +146,7 @@ fn parse_args() -> Args {
                     eprintln!("available sources: {}", Source::NAMES);
                     usage(2);
                 });
+                source_set = true;
             }
             "-w" | "--wpm" => {
                 let value = take_value("--wpm");
@@ -117,9 +159,11 @@ fn parse_args() -> Args {
                     usage(2);
                 }
                 args.slow = true;
+                wpm_set = true;
             }
             "-l" | "--lang" => {
                 args.lang = take_value("--lang").to_lowercase();
+                lang_set = true;
                 if args.lang.is_empty() {
                     eprintln!("error: --lang must not be empty");
                     usage(2);
@@ -136,6 +180,26 @@ fn parse_args() -> Args {
     args.query = words.join(" ");
     if args.query.trim().is_empty() {
         usage(2);
+    }
+
+    let config = config::load().unwrap_or_else(|error| {
+        eprintln!("error: {error}");
+        process::exit(2);
+    });
+    if !source_set
+        && let Some(source) = config.source().unwrap_or_else(|error| {
+            eprintln!("error: {error}");
+            process::exit(2);
+        })
+    {
+        args.source = source;
+    }
+    if !lang_set && let Some(lang) = config.lang {
+        args.lang = lang;
+    }
+    if !wpm_set && let Some(wpm) = config.wpm {
+        args.wpm = wpm;
+        args.slow = true;
     }
     args
 }
@@ -165,7 +229,7 @@ fn extra_pause_ms(word: &str) -> u64 {
     }
 }
 
-fn print_slowly(text: &str, wpm: u64, slow: bool) {
+fn print_slowly<W: Write>(out: &mut W, text: &str, wpm: u64, slow: bool) -> io::Result<()> {
     let width = env::var("COLUMNS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
@@ -173,22 +237,15 @@ fn print_slowly(text: &str, wpm: u64, slow: bool) {
         .max(20);
 
     let per_word = Duration::from_millis((60_000 / wpm).max(1));
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
     let mut column = 0usize;
 
     for line in text.lines() {
         let line = line.trim();
 
         if line.is_empty() {
-            if writeln!(out).is_err() {
-                return;
-            }
-            let _ = out.flush();
+            writeln!(out)?;
+            out.flush()?;
             column = 0;
-            if slow {
-                sleep(Duration::from_millis(450));
-            }
             continue;
         }
 
@@ -196,34 +253,37 @@ fn print_slowly(text: &str, wpm: u64, slow: bool) {
             let len = word.chars().count();
 
             if column > 0 && column + 1 + len > width {
-                if writeln!(out).is_err() {
-                    return;
-                }
+                writeln!(out)?;
                 column = 0;
             }
 
             let separator = if column > 0 { " " } else { "" };
-            if write!(out, "{separator}{word}").is_err() {
-                return;
-            }
+            write!(out, "{separator}{word}")?;
             column += separator.len() + len;
 
             if slow {
-                if out.flush().is_err() {
-                    return;
-                }
+                out.flush()?;
                 sleep(per_word + Duration::from_millis(extra_pause_ms(word)));
             }
         }
 
-        if writeln!(out).is_err() || out.flush().is_err() {
-            return;
-        }
+        writeln!(out)?;
+        out.flush()?;
         column = 0;
 
         if slow {
             sleep(Duration::from_millis(450));
         }
+    }
+    Ok(())
+}
+
+fn finish_output(result: io::Result<()>) {
+    if let Err(error) = result
+        && error.kind() != io::ErrorKind::BrokenPipe
+    {
+        eprintln!("error: could not write output: {error}");
+        process::exit(1);
     }
 }
 
@@ -240,21 +300,32 @@ fn main() {
                     "title": article.title,
                     "text": article.text,
                 });
-                match serde_json::to_writer_pretty(io::stdout(), &value) {
-                    Ok(()) => println!(),
-                    Err(error) => {
-                        eprintln!("error: {error}");
-                        process::exit(1);
-                    }
-                }
+                let stdout = io::stdout();
+                let mut out = stdout.lock();
+                let result = serde_json::to_writer_pretty(&mut out, &value)
+                    .map_err(|error| match error.io_error_kind() {
+                        Some(kind) => io::Error::new(kind, error),
+                        None => io::Error::other(error),
+                    })
+                    .and_then(|()| writeln!(out));
+                drop(out);
+                finish_output(result);
                 return;
             }
             let theme = Theme::from_env(args.color);
-            println!(
-                "{}\n",
-                theme.paint(Role::Heading, &sanitize(&article.title))
-            );
-            print_slowly(&sanitize(&article.text), args.wpm, args.slow);
+            let result = {
+                let stdout = io::stdout();
+                let mut out = stdout.lock();
+                writeln!(
+                    out,
+                    "{}\n",
+                    theme.paint(Role::Heading, &sanitize(&article.title))
+                )
+                .and_then(|()| {
+                    print_slowly(&mut out, &sanitize(&article.text), args.wpm, args.slow)
+                })
+            };
+            finish_output(result);
         }
         Err(message) => {
             eprintln!("error: {message}");
@@ -279,5 +350,17 @@ mod tests {
         assert_eq!(extra_pause_ms("word."), 220);
         assert_eq!(extra_pause_ms("word!\""), 220);
         assert_eq!(extra_pause_ms("\"word?\""), 220);
+    }
+
+    #[test]
+    fn prints_paragraphs_and_propagates_success() {
+        let mut output = Vec::new();
+        print_slowly(&mut output, "one two\n\nthree", DEFAULT_WPM, false).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "one two\n\nthree\n");
+    }
+
+    #[test]
+    fn broken_pipes_are_not_output_errors() {
+        finish_output(Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed")));
     }
 }

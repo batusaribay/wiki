@@ -112,20 +112,25 @@ fn get(agent: &ureq::Agent, url: &str) -> Result<String, String> {
         .get(url)
         .call()
         .map_err(|e| format!("request failed: {e}"))?;
-
-    let mut bytes = Vec::new();
-    response
-        .into_reader()
-        .take(MAX_RESPONSE_BYTES)
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("could not read response: {e}"))?;
-    let body = String::from_utf8_lossy(&bytes).into_owned();
+    let body = read_capped(response.into_reader(), MAX_RESPONSE_BYTES, "response")?;
 
     if body.is_empty() {
         return Err("the server returned an empty response".to_string());
     }
 
     Ok(body)
+}
+
+fn read_capped(reader: impl Read, limit: u64, description: &str) -> Result<String, String> {
+    let mut bytes = Vec::new();
+    reader
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("could not read {description}: {e}"))?;
+    if bytes.len() as u64 > limit {
+        return Err(format!("{description} exceeds the {limit}-byte limit"));
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn wikipedia(agent: &ureq::Agent, query: &str, lang: &str, full: bool) -> Result<Article, String> {
@@ -163,18 +168,19 @@ fn wikipedia(agent: &ureq::Agent, query: &str, lang: &str, full: bool) -> Result
 
 fn its_foss(agent: &ureq::Agent, query: &str) -> Result<Article, String> {
     let page = get(agent, ITSFOSS_HOME)?;
-    let api = html_attribute(&page, "data-api")
+    let document = Html::parse_document(&page);
+    let api = html_attribute(&document, "data-api")
         .filter(|api| api.starts_with("https://itsfoss.com/"))
         .ok_or("could not find the It's FOSS content API")?;
     let api = if api.ends_with('/') {
-        api
+        api.to_string()
     } else {
         format!("{api}/")
     };
-    let key =
-        html_attribute(&page, "data-key").ok_or("could not find the It's FOSS content API key")?;
+    let key = html_attribute(&document, "data-key")
+        .ok_or("could not find the It's FOSS content API key")?;
 
-    let index_url = format!("{api}search-index/posts/?key={}", urlencode(&key));
+    let index_url = format!("{api}search-index/posts/?key={}", urlencode(key));
     let index = get(agent, &index_url)?;
     let index: Value =
         serde_json::from_str(&index).map_err(|e| format!("could not parse search results: {e}"))?;
@@ -191,7 +197,7 @@ fn its_foss(agent: &ureq::Agent, query: &str) -> Result<Article, String> {
     let post_url = format!(
         "{api}posts/{}/?key={}&formats=plaintext",
         urlencode(id),
-        urlencode(&key)
+        urlencode(key)
     );
     let body = get(agent, &post_url)?;
     let post: Value =
@@ -337,11 +343,17 @@ fn browser_html(url: &str) -> Result<String, String> {
     let (work, output) = private_work_dir()?;
     let profile = work.join("profile");
 
-    let file = OpenOptions::new()
+    let file = match OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&output)
-        .map_err(|e| format!("could not create browser output: {e}"))?;
+    {
+        Ok(file) => file,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&work);
+            return Err(format!("could not create browser output: {error}"));
+        }
+    };
 
     let mut command = Command::new(browser);
     command
@@ -361,6 +373,7 @@ fn browser_html(url: &str) -> Result<String, String> {
     let html = read_limited(&output);
     let _ = fs::remove_dir_all(&work);
     result?;
+    let html = html?;
 
     if html.is_empty() {
         return Err("the browser returned an empty page".to_string());
@@ -377,13 +390,14 @@ fn private_work_dir() -> Result<(PathBuf, PathBuf), String> {
             .unwrap_or(0);
         let dir =
             std::env::temp_dir().join(format!("wiki-{}-{nanos}-{attempt}", std::process::id()));
-        match fs::create_dir(&dir) {
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        match builder.create(&dir) {
             Ok(()) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
-                }
                 let output = dir.join("page.html");
                 return Ok((dir, output));
             }
@@ -396,13 +410,9 @@ fn private_work_dir() -> Result<(PathBuf, PathBuf), String> {
     Err("could not create a unique temporary directory".to_string())
 }
 
-fn read_limited(path: &Path) -> String {
-    let Ok(file) = File::open(path) else {
-        return String::new();
-    };
-    let mut bytes = Vec::new();
-    let _ = file.take(MAX_RESPONSE_BYTES).read_to_end(&mut bytes);
-    String::from_utf8_lossy(&bytes).into_owned()
+fn read_limited(path: &Path) -> Result<String, String> {
+    let file = File::open(path).map_err(|e| format!("could not open browser output: {e}"))?;
+    read_capped(file, MAX_RESPONSE_BYTES, "browser output")
 }
 
 fn validate_lang(lang: &str) -> Result<(), String> {
@@ -649,12 +659,11 @@ fn normalize_text(text: &str) -> String {
     lines.join("\n")
 }
 
-fn html_attribute(html: &str, name: &str) -> Option<String> {
-    let needle = format!("{name}=\"");
-    let start = html.find(&needle)? + needle.len();
-    let rest = &html[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+fn html_attribute<'a>(document: &'a Html, name: &str) -> Option<&'a str> {
+    let selector = Selector::parse(&format!("[{name}]")).ok()?;
+    document
+        .select(&selector)
+        .find_map(|element| element.value().attr(name))
 }
 
 fn urlencode(input: &str) -> String {
@@ -682,6 +691,30 @@ mod tests {
         assert_eq!(Source::parse("Its-FOSS"), Some(Source::ItsFoss));
         assert_eq!(Source::parse("wikihow"), Some(Source::WikiHow));
         assert_eq!(Source::parse("example"), None);
+    }
+
+    #[test]
+    fn capped_reads_reject_truncation() {
+        let exact = read_capped(std::io::Cursor::new(b"1234"), 4, "test input").unwrap();
+        assert_eq!(exact, "1234");
+        let error = read_capped(std::io::Cursor::new(b"12345"), 4, "test input").unwrap_err();
+        assert!(error.contains("exceeds the 4-byte limit"));
+    }
+
+    #[test]
+    fn creates_private_work_directories() {
+        let (work, output) = private_work_dir().expect("private work directory");
+        assert!(work.is_dir());
+        assert!(!output.exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&work).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+        fs::remove_dir_all(work).expect("remove test work directory");
     }
 
     #[test]
@@ -747,14 +780,17 @@ mod tests {
 
     #[test]
     fn extracts_html_attributes() {
-        let html =
-            r#"<div data-key="abc123" data-api="https://itsfoss.com/ghost/api/content/"></div>"#;
-        assert_eq!(html_attribute(html, "data-key").as_deref(), Some("abc123"));
+        let html = concat!(
+            r#"<script>const example = 'data-key="wrong"';</script>"#,
+            r#"<div data-key='abc123' data-api="https://itsfoss.com/ghost/api/content/"></div>"#
+        );
+        let document = Html::parse_document(html);
+        assert_eq!(html_attribute(&document, "data-key"), Some("abc123"));
         assert_eq!(
-            html_attribute(html, "data-api").as_deref(),
+            html_attribute(&document, "data-api"),
             Some("https://itsfoss.com/ghost/api/content/")
         );
-        assert_eq!(html_attribute(html, "data-missing"), None);
+        assert_eq!(html_attribute(&document, "data-missing"), None);
     }
 
     #[test]
