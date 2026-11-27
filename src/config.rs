@@ -11,7 +11,7 @@ use crate::sources::Source;
 pub struct Config {
     pub source: Option<String>,
     pub lang: Option<String>,
-    pub wpm: Option<u64>,
+    pub cpm: Option<u64>,
 }
 
 impl Config {
@@ -27,9 +27,9 @@ impl Config {
     }
 
     fn validate(&self) -> Result<(), String> {
-        if self.wpm == Some(0) {
+        if self.cpm == Some(0) {
             return Err(format!(
-                "wpm in {} must be greater than 0",
+                "cpm in {} must be greater than 0",
                 config_path().display()
             ));
         }
@@ -92,20 +92,20 @@ mod tests {
     #[test]
     fn accepts_valid_defaults() {
         let config: Config =
-            toml::from_str("source = \"itsfoss\"\nlang = \"tr\"\nwpm = 300").unwrap();
+            toml::from_str("source = \"itsfoss\"\nlang = \"tr\"\ncpm = 300").unwrap();
         config.validate().unwrap();
         assert_eq!(config.source().unwrap(), Some(Source::ItsFoss));
         assert_eq!(config.lang.as_deref(), Some("tr"));
-        assert_eq!(config.wpm, Some(300));
+        assert_eq!(config.cpm, Some(300));
     }
 
     #[test]
     fn rejects_invalid_and_unknown_settings() {
-        for source in ["wpm = 0", "lang = \"\"", "source = \"example\""] {
+        for source in ["cpm = 0", "lang = \"\"", "source = \"example\""] {
             let config: Config = toml::from_str(source).unwrap();
             assert!(config.validate().is_err(), "{source}");
         }
-        assert!(toml::from_str::<Config>("wpmm = 300").is_err());
+        assert!(toml::from_str::<Config>("cpmm = 300").is_err());
     }
 
     #[test]

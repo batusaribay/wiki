@@ -11,16 +11,14 @@ use std::time::Duration;
 use sources::{Source, fetch};
 use theme::{ColorMode, Role, Theme};
 
-const DEFAULT_WPM: u64 = 238;
 const DEFAULT_WIDTH: usize = 80;
 
 struct Args {
     query: String,
-    wpm: u64,
+    cpm: Option<u64>,
     full: bool,
     lang: String,
     source: Source,
-    slow: bool,
     json: bool,
     color: ColorMode,
 }
@@ -32,8 +30,7 @@ Usage: wiki [OPTIONS] <QUERY>
 
 Options:
   -s, --source <NAME>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
-  -w, --wpm <N>        Reading speed in words per minute (implies --slow)
-      --slow           Print at reading speed
+      --cpm <N>        Reading speed in characters per minute
   -f, --full           Print the whole Wikipedia article, not just the intro
   -l, --lang <CODE>    Wikipedia language code (default: en)
       --json           Print the article as JSON
@@ -76,18 +73,17 @@ fn parse_args() -> Args {
     }
     let mut args = Args {
         query: String::new(),
-        wpm: DEFAULT_WPM,
+        cpm: None,
         full: false,
         lang: "en".to_string(),
         source: Source::Wikipedia,
-        slow: false,
         json: false,
         color: ColorMode::Auto,
     };
     let mut words = Vec::new();
     let mut source_set = false;
     let mut lang_set = false;
-    let mut wpm_set = false;
+    let mut cpm_set = false;
     let mut argv = raw_args.into_iter();
 
     while let Some(arg) = argv.next() {
@@ -123,10 +119,6 @@ fn parse_args() -> Args {
                 reject_flag_value(&flag, &inline);
                 args.full = true;
             }
-            "--slow" => {
-                reject_flag_value(&flag, &inline);
-                args.slow = true;
-            }
             "--json" => {
                 reject_flag_value(&flag, &inline);
                 args.json = true;
@@ -148,18 +140,18 @@ fn parse_args() -> Args {
                 });
                 source_set = true;
             }
-            "-w" | "--wpm" => {
-                let value = take_value("--wpm");
-                args.wpm = value.parse().unwrap_or_else(|_| {
-                    eprintln!("error: --wpm must be a number");
+            "--cpm" => {
+                let value = take_value("--cpm");
+                let cpm = value.parse().unwrap_or_else(|_| {
+                    eprintln!("error: --cpm must be a number");
                     usage(2);
                 });
-                if args.wpm == 0 {
-                    eprintln!("error: --wpm must be greater than 0");
+                if cpm == 0 {
+                    eprintln!("error: --cpm must be greater than 0");
                     usage(2);
                 }
-                args.slow = true;
-                wpm_set = true;
+                args.cpm = Some(cpm);
+                cpm_set = true;
             }
             "-l" | "--lang" => {
                 args.lang = take_value("--lang").to_lowercase();
@@ -197,9 +189,8 @@ fn parse_args() -> Args {
     if !lang_set && let Some(lang) = config.lang {
         args.lang = lang;
     }
-    if !wpm_set && let Some(wpm) = config.wpm {
-        args.wpm = wpm;
-        args.slow = true;
+    if !cpm_set && let Some(cpm) = config.cpm {
+        args.cpm = Some(cpm);
     }
     args
 }
@@ -229,14 +220,14 @@ fn extra_pause_ms(word: &str) -> u64 {
     }
 }
 
-fn print_slowly<W: Write>(out: &mut W, text: &str, wpm: u64, slow: bool) -> io::Result<()> {
+fn print_slowly<W: Write>(out: &mut W, text: &str, cpm: Option<u64>) -> io::Result<()> {
     let width = env::var("COLUMNS")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(DEFAULT_WIDTH)
         .max(20);
 
-    let per_character = Duration::from_millis((60_000 / (wpm * 5)).max(1));
+    let per_character = cpm.map(|cpm| Duration::from_millis((60_000 / cpm).max(1)));
     let mut column = 0usize;
 
     for line in text.lines() {
@@ -263,13 +254,13 @@ fn print_slowly<W: Write>(out: &mut W, text: &str, wpm: u64, slow: bool) -> io::
 
             for character in word.chars() {
                 write!(out, "{character}")?;
-                if slow {
+                if let Some(delay) = per_character {
                     out.flush()?;
-                    sleep(per_character);
+                    sleep(delay);
                 }
             }
 
-            if slow {
+            if per_character.is_some() {
                 out.flush()?;
                 sleep(Duration::from_millis(extra_pause_ms(word)));
             }
@@ -279,7 +270,7 @@ fn print_slowly<W: Write>(out: &mut W, text: &str, wpm: u64, slow: bool) -> io::
         out.flush()?;
         column = 0;
 
-        if slow {
+        if per_character.is_some() {
             sleep(Duration::from_millis(450));
         }
     }
@@ -329,9 +320,7 @@ fn main() {
                     "{}\n",
                     theme.paint(Role::Heading, &sanitize(&article.title))
                 )
-                .and_then(|()| {
-                    print_slowly(&mut out, &sanitize(&article.text), args.wpm, args.slow)
-                })
+                .and_then(|()| print_slowly(&mut out, &sanitize(&article.text), args.cpm))
             };
             finish_output(result);
         }
@@ -363,16 +352,16 @@ mod tests {
     #[test]
     fn prints_paragraphs_and_propagates_success() {
         let mut output = Vec::new();
-        print_slowly(&mut output, "one two\n\nthree", DEFAULT_WPM, false).unwrap();
+        print_slowly(&mut output, "one two\n\nthree", None).unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "one two\n\nthree\n");
     }
 
     #[test]
     fn slow_reading_matches_plain_output() {
         let mut plain = Vec::new();
-        print_slowly(&mut plain, "one two\n\nthree", DEFAULT_WPM, false).unwrap();
+        print_slowly(&mut plain, "one two\n\nthree", None).unwrap();
         let mut slow = Vec::new();
-        print_slowly(&mut slow, "one two\n\nthree", 100_000, true).unwrap();
+        print_slowly(&mut slow, "one two\n\nthree", Some(100_000)).unwrap();
         assert_eq!(plain, slow);
     }
 

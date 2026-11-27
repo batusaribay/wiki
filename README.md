@@ -21,10 +21,10 @@ fetched as plain text. wikiHow is loaded in a local headless Chromium or Chrome
 because the site blocks plain automated requests, then reduced to its intro,
 steps, tips, and warnings.
 
-Text prints immediately by default. `--slow` switches to character-by-character
-reading: each character waits `60000 / (wpm * 5)` milliseconds, commas add
-110 ms, sentence ends add 220 ms, and paragraph breaks add 450 ms. Lines wrap to
-`COLUMNS`, or 80 when it is unset. `--json` returns the source, query, title, and extracted text for
+Text prints immediately by default. `--cpm` switches to character-by-character
+reading at the given characters per minute: each character waits
+`60000 / cpm` milliseconds, commas add 110 ms, sentence ends add 220 ms, and
+paragraph breaks add 450 ms. Lines wrap to `COLUMNS`, or 80 when it is unset. `--json` returns the source, query, title, and extracted text for
 scripts. TLS is handled by `rustls`, with a 10-second connect timeout, a
 60-second overall timeout, and a 16 MiB response cap.
 
@@ -35,8 +35,7 @@ wiki [OPTIONS] <QUERY>
 
 Options:
   -s, --source <NAME>  Source: wikipedia, itsfoss, or wikihow (default: wikipedia)
-  -w, --wpm <N>        Reading speed in words per minute (implies --slow)
-      --slow           Print at reading speed
+      --cpm <N>        Reading speed in characters per minute
   -f, --full           Print the whole Wikipedia article, not just the intro
   -l, --lang <CODE>    Wikipedia language code (default: en)
       --json           Print the article as JSON
@@ -47,8 +46,7 @@ Options:
 
 ```bash
 wiki rust programming language
-wiki --slow alan turing
-wiki --wpm 300 alan turing
+wiki --cpm 1200 alan turing
 wiki --full history of the bicycle
 wiki --lang tr kedi
 wiki --source itsfoss linux mint
