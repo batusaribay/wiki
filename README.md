@@ -61,8 +61,15 @@ matching article, and wikiHow requires Chromium or Chrome.
 
 ## Config
 
-Reads `~/.config/wiki/config.toml` if present. Flags override the file;
-defaults apply otherwise.
+Optional. Reads `~/.config/wiki/config.toml` if present. Flags override the file; defaults apply otherwise.
+
+```toml
+source = "wikipedia"
+lang = "en"
+
+# Reading speed in characters per minute. Omit for instant output.
+# cpm = 1200
+```
 
 ## Install
 
