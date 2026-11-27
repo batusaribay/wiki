@@ -21,10 +21,10 @@ fetched as plain text. wikiHow is loaded in a local headless Chromium or Chrome
 because the site blocks plain automated requests, then reduced to its intro,
 steps, tips, and warnings.
 
-Text prints immediately by default. `--slow` switches to word-by-word reading:
-each word waits `60000 / wpm` milliseconds, commas add 110 ms, sentence ends add
-220 ms, and paragraph breaks add 450 ms. Lines wrap to `COLUMNS`, or 80 when it
-is unset. `--json` returns the source, query, title, and extracted text for
+Text prints immediately by default. `--slow` switches to character-by-character
+reading: each character waits `60000 / (wpm * 5)` milliseconds, commas add
+110 ms, sentence ends add 220 ms, and paragraph breaks add 450 ms. Lines wrap to
+`COLUMNS`, or 80 when it is unset. `--json` returns the source, query, title, and extracted text for
 scripts. TLS is handled by `rustls`, with a 10-second connect timeout, a
 60-second overall timeout, and a 16 MiB response cap.
 

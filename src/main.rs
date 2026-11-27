@@ -236,7 +236,7 @@ fn print_slowly<W: Write>(out: &mut W, text: &str, wpm: u64, slow: bool) -> io::
         .unwrap_or(DEFAULT_WIDTH)
         .max(20);
 
-    let per_word = Duration::from_millis((60_000 / wpm).max(1));
+    let per_character = Duration::from_millis((60_000 / (wpm * 5)).max(1));
     let mut column = 0usize;
 
     for line in text.lines() {
@@ -258,12 +258,20 @@ fn print_slowly<W: Write>(out: &mut W, text: &str, wpm: u64, slow: bool) -> io::
             }
 
             let separator = if column > 0 { " " } else { "" };
-            write!(out, "{separator}{word}")?;
+            write!(out, "{separator}")?;
             column += separator.len() + len;
+
+            for character in word.chars() {
+                write!(out, "{character}")?;
+                if slow {
+                    out.flush()?;
+                    sleep(per_character);
+                }
+            }
 
             if slow {
                 out.flush()?;
-                sleep(per_word + Duration::from_millis(extra_pause_ms(word)));
+                sleep(Duration::from_millis(extra_pause_ms(word)));
             }
         }
 
@@ -357,6 +365,15 @@ mod tests {
         let mut output = Vec::new();
         print_slowly(&mut output, "one two\n\nthree", DEFAULT_WPM, false).unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "one two\n\nthree\n");
+    }
+
+    #[test]
+    fn slow_reading_matches_plain_output() {
+        let mut plain = Vec::new();
+        print_slowly(&mut plain, "one two\n\nthree", DEFAULT_WPM, false).unwrap();
+        let mut slow = Vec::new();
+        print_slowly(&mut slow, "one two\n\nthree", 100_000, true).unwrap();
+        assert_eq!(plain, slow);
     }
 
     #[test]
